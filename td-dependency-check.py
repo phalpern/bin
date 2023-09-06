@@ -63,7 +63,7 @@ class component_stats:
             warnings += 1
             ret += "    Warning: Test-only dependency cycles:\n"
             for cycle in self.testonly_cycles:
-                ret += self.format_cycle(cycle, True) + '\n'
+                ret += self.format_cycle(cycle) + '\n'
 
         if self.component_level < self.testonly_level:
             warnings += 1
@@ -74,8 +74,8 @@ class component_stats:
             warnings += 1
             ret += "    Warning: dependencies incorrectly marked " + \
                 "'for testing only':\n"
-            for dep in sorted(self.excess_test_deps):
-                ret += "        " + dep
+            for dep in sorted(self.false_test_deps):
+                ret += "        " + dep + '\n'
 
         if errors or warnings:
             ret += f"    {errors} Errors, {warnings} Warnings\n"
@@ -84,12 +84,12 @@ class component_stats:
 
         return ret
 
-    def format_cycle(self, cycle, testonly = False):
-        cycle_str = cycle[0].component_name
-        cycle_str += " -T> " if testonly else " -> "
-        for component in cycle[1:]:
-            cycle_str += component.component_name + " -> "
-        cycle_str += cycle[0].component_name
+    def format_cycle(self, cycle):
+        cycle_str = ""
+        for component, testdep in cycle:
+            cycle_str += component.component_name
+            cycle_str += " -T> " if testdep else " -> "
+        cycle_str += cycle[0][0].component_name
         return '\n'.join(textwrap.wrap(cycle_str, width=79,
                                        initial_indent="        ",
                                        subsequent_indent="            ",
@@ -102,7 +102,8 @@ class component_stats:
 
         if self.visiting:
             # Found a cycle
-            cycle_start = path.index(self)
+            cycle_start = next((i for i in range(len(path))
+                                if path[i][0] == self))
             cycle = path[cycle_start:]
             self.record_cycle(cycle)
             return
@@ -124,17 +125,19 @@ class component_stats:
 
         self.visiting = True
 
-        # if component_name == "bslma_isstdallocator":
-        #     print([ x.component_name for x in path + (self,) ])
-        #     pprint(vars(self))
-
+        # Note that our level is at least one more than the *test* level
+        # (`testonly_level`) of components on which we depend, even when
+        # traversing non-test dependencies.  That way, only level differences
+        # corresponding to *this* component are reflected in the level
+        # variables.
         level = 0
         for dependency_name in self.component_deps:
-            dependency = visit_by_name(dependency_name, path + (self,))
+            dependency = visit_by_name(dependency_name,
+                                       path + ((self, False),))
             level = max(level, dependency.testonly_level + 1)
         self.component_level = level
         for dependency_name in self.testonly_deps:
-            dependency = visit_by_name(dependency_name, path + (self,))
+            dependency = visit_by_name(dependency_name, path + ((self, True),))
             level = max(level, dependency.testonly_level + 1)
         self.testonly_level = level
 
@@ -168,14 +171,16 @@ class component_stats:
     def record_cycle(self, cycle):
         # Record testonly cycles first.
         testonly = False
-        for i in range(0, len(cycle)):
-            if cycle[i].component_name in cycle[i - 1].testonly_deps:
+        for i in range(len(cycle)):
+            component, testdep = cycle[i]
+            if testdep:
                 testonly = True  # Found at least one test-only dependedency
-                cycle[i - 1].testonly_cycles.add(cycle[i-1:]+cycle[:i-1])
+                component.testonly_cycles.add(cycle[i:]+cycle[:i])
 
         if testonly: return  # If any deps are test-only, don't record cycles
-        for i in range(0, len(cycle)):
-            cycle[i - 1].component_cycles.add(cycle[i-1:]+cycle[:i-1])
+        for i in range(len(cycle)):
+            (component, testdep) = cycle[i]
+            component.component_cycles.add(cycle[i:]+cycle[:i])
 
 def visit_by_name(component_name, path = tuple()):
 
