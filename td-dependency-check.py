@@ -3,6 +3,7 @@
 import sys
 import re
 import os
+import textwrap
 from pprint import pprint
 from component_files import ComponentFiles
 
@@ -27,13 +28,73 @@ class component_stats:
         self.visited                   = False
         self.component_deps            = set()
         self.testonly_deps             = set()
-#       self.transitive_component_deps = set()
         self.excess_test_deps          = set()
+        self.false_test_deps           = set()
         self.component_cycles          = set()
         self.testonly_cycles           = set()
         self.component_level           = 0     # excludes test driver
         self.testonly_level            = 0     # includes test driver
         components[component_name] = self
+
+    def __less__(self, other):
+        return self.component_name < other.component_name
+
+    def __str__(self):
+        ret = f"Component {self.component_name}:\n";
+        ret += f"    Level number = {self.component_level}, " +      \
+            f" Test driver level number = {self.testonly_level}\n"
+
+        errors = 0
+        warnings = 0
+
+        if self.component_cycles:
+            errors += 1
+            ret += "    Error: Dependency cycles detected:\n"
+            for cycle in self.component_cycles:
+                ret += self.format_cycle(cycle) + '\n'
+
+        if self.excess_test_deps:
+            errors += 1
+            ret += "    Error: Undocumented test-only dependencies:\n"
+            for dep in sorted(self.excess_test_deps):
+                ret += "        " + dep + '\n'
+
+        if self.testonly_cycles:
+            warnings += 1
+            ret += "    Warning: Test-only dependency cycles:\n"
+            for cycle in self.testonly_cycles:
+                ret += self.format_cycle(cycle, True) + '\n'
+
+        if self.component_level < self.testonly_level:
+            warnings += 1
+            ret += "    Warning: test driver has larger level number " + \
+                "than component\n"
+
+        if self.false_test_deps:
+            warnings += 1
+            ret += "    Warning: dependencies incorrectly marked " + \
+                "'for testing only':\n"
+            for dep in sorted(self.excess_test_deps):
+                ret += "        " + dep
+
+        if errors or warnings:
+            ret += f"    {errors} Errors, {warnings} Warnings\n"
+        else:
+            ret += "    No errors or warnings\n"
+
+        return ret
+
+    def format_cycle(self, cycle, testonly = False):
+        cycle_str = cycle[0].component_name
+        cycle_str += " -T> " if testonly else " -> "
+        for component in cycle[1:]:
+            cycle_str += component.component_name + " -> "
+        cycle_str += cycle[0].component_name
+        return '\n'.join(textwrap.wrap(cycle_str, width=79,
+                                       initial_indent="        ",
+                                       subsequent_indent="            ",
+                                       break_long_words=False))
+
 
     def visit(self, path = tuple()):
 
@@ -43,18 +104,11 @@ class component_stats:
             # Found a cycle
             cycle_start = path.index(self)
             cycle = path[cycle_start:]
-            if cycle[1].component_name in self.testonly_deps:
-                self.testonly_cycles.add(cycle)
-            else:
-                self.component_cycles.add(cycle)
-                # Record cycle in all of the components within the cycle
-                for i in range(1, len(cycle)):
-                    cycle[i].component_cycles.add(cycle[i:]+cycle[0:i])
+            self.record_cycle(cycle)
             return
 
         hdr_file, imp_file, *test_files = ComponentFiles(self.component_name)
 
-        self.excess_test_deps = set()
         self.component_deps = self.get_direct_deps(hdr_file).union(
             self.get_direct_deps(imp_file, self.testonly_deps))
         for test_file in test_files:
@@ -111,6 +165,17 @@ class component_stats:
 
         return ret
 
+    def record_cycle(self, cycle):
+        # Record testonly cycles first.
+        testonly = False
+        for i in range(0, len(cycle)):
+            if cycle[i].component_name in cycle[i - 1].testonly_deps:
+                testonly = True  # Found at least one test-only dependedency
+                cycle[i - 1].testonly_cycles.add(cycle[i-1:]+cycle[:i-1])
+
+        if testonly: return  # If any deps are test-only, don't record cycles
+        for i in range(0, len(cycle)):
+            cycle[i - 1].component_cycles.add(cycle[i-1:]+cycle[:i-1])
 
 def visit_by_name(component_name, path = tuple()):
 
@@ -120,32 +185,6 @@ def visit_by_name(component_name, path = tuple()):
         component = component_stats(component_name)
     component.visit(path)
     return component
-
-def get_includes(file_name):
-    component   = os.path.basename(component_path)
-    package     = component.split('_')[0]
-    pattern     = r'^\s*#\s*include\s+["<](' + package + '_\w+.h)[">]'
-    with open(file_name, 'r') as file:
-        file_content = file.read()
-        pkg_includes = re.findall(pattern, file_content, re.MULTILINE)
-        return { inc for inc in pkg_includes if not inc.endswith("_cpp03.h") }
-
-def process_component(component_path):
-    component_name = os.path.basename(component_path)
-    component      = components[component_name]
-
-    header      = component_path + ".h"
-    imp         = component_path + ".cpp"
-    test_driver = component_path + ".t.cpp"
-
-    component_deps = get_includes(header).union(get_includes(imp))
-    test_deps      = get_includes(test_driver)
-
-    excess_deps = test_deps.difference(component_deps)
-    if excess_deps:
-        print(f"\nExcess test-driver dependencies for {component}:")
-        for excess in sorted(list(excess_deps)):
-            print(f"#include <{excess}>  // for testing only")
 
 if __name__ == "__main__":
     component_set = set()
@@ -168,6 +207,6 @@ if __name__ == "__main__":
 
     for component_name in component_set:
         visit_by_name(component_name)
-    for component_name in component_set:
+    for component_name in sorted(component_set):
         print(components[component_name])
-        pprint(vars(components[component_name]))
+        # pprint(vars(components[component_name]))
