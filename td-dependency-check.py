@@ -42,7 +42,7 @@ class component_stats:
     def __str__(self):
         ret = f"Component {self.component_name}:\n";
         ret += f"    Level number = {self.component_level}, " +      \
-            f" Test driver level number = {self.testonly_level}\n"
+            f"Test driver level number = {self.testonly_level}\n"
 
         errors = 0
         warnings = 0
@@ -88,13 +88,12 @@ class component_stats:
         cycle_str = ""
         for component, testdep in cycle:
             cycle_str += component.component_name
-            cycle_str += " -T> " if testdep else " -> "
+            cycle_str += " T-> " if testdep else " -> "
         cycle_str += cycle[0][0].component_name
         return '\n'.join(textwrap.wrap(cycle_str, width=79,
                                        initial_indent="        ",
                                        subsequent_indent="            ",
                                        break_long_words=False))
-
 
     def visit(self, path = tuple()):
 
@@ -102,26 +101,10 @@ class component_stats:
 
         if self.visiting:
             # Found a cycle
-            cycle_start = next((i for i in range(len(path))
-                                if path[i][0] == self))
-            cycle = path[cycle_start:]
-            self.record_cycle(cycle)
+            self.record_cycle(path)
             return
 
-        hdr_file, imp_file, *test_files = ComponentFiles(self.component_name)
-
-        self.component_deps = self.get_direct_deps(hdr_file).union(
-            self.get_direct_deps(imp_file, self.testonly_deps))
-        for test_file in test_files:
-            for inc in self.get_direct_deps(test_file):
-                if (inc not in self.component_deps and
-                    inc not in self.testonly_deps):
-                    self.testonly_deps.add(inc)
-                    self.excess_test_deps.add(inc)
-        self.false_test_deps = \
-            self.testonly_deps.intersection(self.component_deps)
-        self.testonly_deps   = \
-            self.testonly_deps.difference(self.false_test_deps)
+        self.get_direct_deps()
 
         self.visiting = True
 
@@ -146,7 +129,23 @@ class component_stats:
 
         return
 
-    def get_direct_deps(self, file_name, testonly_deps = None):
+    def get_direct_deps(self):
+        hdr_file, imp_file, *test_files = ComponentFiles(self.component_name)
+
+        self.component_deps = self.get_file_deps(hdr_file).union(
+            self.get_file_deps(imp_file, self.testonly_deps))
+        for test_file in test_files:
+            for inc in self.get_file_deps(test_file):
+                if (inc not in self.component_deps and
+                    inc not in self.testonly_deps):
+                    self.testonly_deps.add(inc)
+                    self.excess_test_deps.add(inc)
+        self.false_test_deps = \
+            self.testonly_deps.intersection(self.component_deps)
+        self.testonly_deps   = \
+            self.testonly_deps.difference(self.false_test_deps)
+
+    def get_file_deps(self, file_name, testonly_deps = None):
         """Return a set of files `#include`d from `file_name`.  If
         `testonly_deps` is not None, segregate testing only includes into
         that set"""
@@ -168,8 +167,13 @@ class component_stats:
 
         return ret
 
-    def record_cycle(self, cycle):
-        # Record testonly cycles first.
+    def record_cycle(self, path):
+        # Find the start of the cycle in the path
+        cycle_start = next((i for i in range(len(path)) if path[i][0] == self))
+        cycle = path[cycle_start:]
+
+        # Record the cycle in every component that participates in it, starting
+        # with the ones starting with a test-only dependency.
         testonly = False
         for i in range(len(cycle)):
             component, testdep = cycle[i]
@@ -177,7 +181,10 @@ class component_stats:
                 testonly = True  # Found at least one test-only dependedency
                 component.testonly_cycles.add(cycle[i:]+cycle[:i])
 
-        if testonly: return  # If any deps are test-only, don't record cycles
+        # If any deps are test-only stop here; do not report non-test-only
+        # cycle for remaining components.
+        if testonly: return
+
         for i in range(len(cycle)):
             (component, testdep) = cycle[i]
             component.component_cycles.add(cycle[i:]+cycle[:i])
