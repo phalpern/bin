@@ -1,0 +1,20 @@
+#! /bin/bash
+
+echo >&2 "Just use git-mkbranch"
+exit -2
+
+if [ $# != 1 ] || [ "$1" = "--help" ]; then
+    echo >&2 "Incorrect number of arguments"
+    echo >&2 "  Usage: $(basename $0) <branch-name>"
+    exit -2
+fi
+
+branchname=$1
+exec git-mkbranch $branchname $branchname
+
+# set -x
+# git config push.default tracking
+# git branch $branchname
+# git checkout $branchname
+# git config branch.$branchname.remote origin
+# git config branch.$branchname.merge refs/heads/dev/phalpern/$branchname

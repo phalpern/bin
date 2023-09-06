@@ -1,0 +1,3 @@
+#! /bin/bash
+# Invoke clang with good arguments for examples in the Emcpps book
+exec clang++ -Wall -Wno-unused-variable -Wno-unused-value -Wno-unneeded-internal-declaration -I/opt/X11/include/ "$@"

@@ -1,0 +1,16 @@
+#! /bin/ksh
+#
+# Print a side-by-side diff of two files.
+
+title="Diff"
+for arg in "$@"
+do
+    if [ -f $arg ]
+    then
+        title="$title $arg"
+    fi
+done
+
+gdiff -y -W 170 "$@" |
+    enscript -DDuplex:true -rG -MLetter --pretty-print=cpp --line-numbers \
+             --margins=::5:5 -f Courier7 --title "$title"

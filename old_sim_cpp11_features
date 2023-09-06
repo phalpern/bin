@@ -1,0 +1,2 @@
+#! /bin/bash
+exec $HOME/bbcm/bde-tools/contrib/old/sim_cpp11_features.pl "$@"

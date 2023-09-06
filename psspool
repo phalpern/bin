@@ -1,0 +1,41 @@
+#! /bin/bash
+
+prefix=01fig
+ext=.ps
+
+function filename
+{
+    suffix=$num
+    if [ ${num} -gt 9 ]
+    then
+	suffix=$num
+    else
+	suffix=0${num}
+    fi
+    echo ${prefix}${suffix}${ext}
+}
+
+if [ $# -gt 0 ]
+then
+	num=$1
+else
+	num=1
+	while [ -f $(filename) ]
+	do
+		num=$(($num+1))
+	done
+fi
+
+echo "Starting at $(filename)"
+
+while true
+do
+  sleep 2
+  if [ -f print.ps ]
+  then
+    chmod +rw print.ps
+    mv print.ps $(filename)
+    echo created $(filename)
+    num=$(( $num+1 ))
+  fi
+done

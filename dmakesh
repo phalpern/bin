@@ -1,0 +1,31 @@
+#! /usr/bin/perl -w
+
+use strict;
+use English;
+use File::Basename;
+
+my $scriptdir=dirname($PROGRAM_NAME) . "/depscripts";
+
+shift @ARGV if ($ARGV[0] eq "-c");
+    
+# ARGV[0] contains the entire command, including args.  Extract command path:
+my ($command) = split(/ /, $ARGV[0]);
+
+# Now extract actual command name, sans directory.
+$command = basename($command);
+
+# If a depends script exists for this command, run it and pass it the
+# entire command.
+my $ret;
+if ( -x "$scriptdir/mkdep-$command" )
+{
+#    print "*> $scriptdir/mkdep-$command @ARGV\n";
+    $ret = system("$scriptdir/mkdep-$command @ARGV") / 256;
+}
+else
+{
+#    print "=> @ARGV\n";
+    $ret = system("@ARGV") / 256;
+}
+
+exit $ret;

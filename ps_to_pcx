@@ -1,0 +1,7 @@
+# This is just an example of how to do it.
+#
+# To find other formats (other than pcxgray), type "ps" and at the interactive
+# prompt, type "devicenames ==".
+#
+# Example of converting a postscript file to a 2550x600 pcx file at 300 dpi:
+gs -sDEVICE=pcxgray -g2550x600 -r300 -sOutputFile=embossed.pcx embossed.ps.prn < /dev/null

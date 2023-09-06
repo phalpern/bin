@@ -1,0 +1,7 @@
+#! /bin/bash
+
+if [ ${PAGER:-less} = emacs-pager ] || [ ${TERM:-dumb} = dumb ]; then
+     exec cat "$@"
+else
+     exec ${PAGER:-less} "$@"
+fi

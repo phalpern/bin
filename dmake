@@ -1,0 +1,119 @@
+#! /usr/bin/perl -w
+#
+# Run make with automatically-generated dependencies.
+#
+
+use strict;
+use English;
+use File::Basename;
+
+my ($makefile, $dmkmakefile);
+my $lastarg = "";
+
+# Function to convert dir/filename name to dir/depends/filename.ext
+sub mungename
+{
+    my ($filename, $ext) = @ARG;
+    return dirname($filename)."/depends/".basename($filename)."$ext";
+}
+
+# See if makefile name specified on commandline
+foreach my $arg (@ARGV)
+{
+    if ($lastarg eq "-f")
+    {
+	# Filename following -F option
+	$makefile = $arg;
+	$dmkmakefile = mungename($makefile, ".dmk");
+	$arg = $dmkmakefile;	# In-place replacement of arg
+	last;
+    }
+    elsif ($arg =~ /^(--file=)(.+)$/ || $arg =~ /^(--makefile=)(.+)$/)
+    {
+	# Filename embedded in --makefile=filename option
+	$makefile = $2;
+	$dmkmakefile = mungename($makefile, ".dmk");
+	$arg = $1 . $dmkmakefile;	# In-place replacement of arg
+	last;
+    }
+
+    # For compatability with clearmake, accept, but remove "-C gnu" option.
+    # Since we are modifying ARGV in place, replace "-C gnu" with "DASHC=".
+    $arg = "DASHC=" if ($lastarg eq "-C");	# Delete "gnu" option
+    $lastarg = $arg;
+    $arg = "DASHC=$arg" if ($arg eq "-C");	# Delete "-C" option
+}
+
+if (! defined $makefile)
+{
+    # Makefile was not specified on command line
+    if ( -f "makefile")
+    {
+	$makefile = "makefile";
+    }
+    elsif ( -f "Makefile")
+    {
+	$makefile = "Makefile";
+    }
+    else
+    {
+	print STDERR "dmake: Cannot find makefile\n";
+	exit 1;
+    }
+
+    $dmkmakefile = mungename($makefile, ".dmk");
+
+    # Add .dmk file to make command line
+    unshift @ARGV, "--makefile=$dmkmakefile";
+}
+
+# Create name of file containing list of dependency files
+my $dlistlistname = mungename($makefile, ".dlist");
+my $depdir=dirname($dlistlistname);
+
+unless ( -d "$depdir" )
+{
+    mkdir($depdir, 0777) or die "Cannot create directory $depdir\n";
+}
+
+# Add makefile and depend dir name to environment for use by dmakesh script
+$ENV{MAKEFILE} = $makefile;
+$ENV{MAKE} = "$PROGRAM_NAME";
+$ENV{DEPDIR} = $depdir;
+$ENV{DEPLIST} = $dlistlistname;
+
+# Create .dmk file
+open DMKFILE, "> $dmkmakefile" or die "Can't write to $dmkmakefile\n";
+
+# Before all of the dependencies, here's the original makefile
+print DMKFILE "include $makefile\n";
+
+# Read the file containing the list of files containing dependencies
+if (open DLISTLIST, "< $dlistlistname")
+{
+    my @dlistlist = sort <DLISTLIST>;
+    close DLISTLIST;
+
+    # Re-write $makefile.dlist, eliminating duplicates and obsolete files.
+    open DLISTLIST, "> $dlistlistname"
+	or die "Unable to rewrite $dlistlistname\n";
+
+    my $prevdlist = "";
+    for my $dlist (@dlistlist)
+    {
+	chomp $dlist;
+	next if ($prevdlist eq $dlist);	# elminiate dups
+	$prevdlist = $dlist;
+	next unless ( -f "$depdir/$dlist" ); # eliminate obsolete files
+	print DLISTLIST "$dlist\n";
+	print DMKFILE "include $depdir/$dlist\n";
+    }
+
+    close DLISTLIST;
+}
+
+close DMKFILE;
+
+# Finally, run normal make on the .dmk file
+#exit system("make", "CXX=g++dep", @ARGV) / 256;
+exit system("make", "SHELL=dmakesh", @ARGV) / 256;

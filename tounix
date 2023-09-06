@@ -1,0 +1,24 @@
+#! /bin/sh
+#
+# Removes CR characters from file. Used to convert DOS text (CRLF)
+# to Unix text (LF).
+#
+
+if [ $# = 0 ]
+then
+    # Read standard input and send result to standard output
+    tr -d '\r'
+    exit
+fi
+
+# Process each file
+for file in "$@"
+do
+    if [ ! -w "$file" ]
+    then
+        echo >&2 "Cannot open $file for writing"
+    else
+        tr -d '\r' < "$file" > "$file.tmp"
+        mv -f "$file.tmp" "$file"
+    fi
+done

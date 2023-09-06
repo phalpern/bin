@@ -1,0 +1,216 @@
+#! /usr/bin/perl -w
+
+=pod
+
+Run cmake_build.py conveniently for desired compiler and ufid.
+
+Using this script instead of calling cmake_build.py directly simplifies the
+workflow when switching among compilers and ufids.  Thus, instead of:
+
+    pushd ~/bde/_build
+
+    eval $(bde_build_env.py --ufid dbg_exc_mt_64)
+    cmake_build.py --targets=bslstl_vector.t --tests=run build
+
+    eval $(bde_build_env.py --ufid dbg_exc_mt_64_cpp11)
+    cmake_build.py --targets=bslstl_vector.t --tests=run build
+
+    eval $(bde_build_env.py -c gcc --ufid dbg_exc_mt_64_cpp17)
+    cmake_build.py --targets=bslstl_vector.t --tests=run build
+
+    popd
+
+Simply type
+
+    mycmake_build.py  --ufid dbg_exc_mt_64 --targets=bslstl_vector.t --tests=run build
+    mycmake_build.py  --ufid dbg_exc_mt_64_cpp11 --targets=bslstl_vector.t --tests=run build
+    mycmake_build.py -c gcc --ufid dbg_exc_mt_64_cpp17 --targets=bslstl_vector.t --tests=run build
+
+Note that there is no need to change directory nor is there a risk of
+forgetting the current configuration.
+
+Usage:
+
+    mycmake_build [ -c <compiler> ] [ --ufid <ufid> ] <cmake_build.py-options>
+
+or
+
+    mycmake_build [ -c <compiler> ] [ --ufid <ufid> ] configure
+
+This command must be executed in directory within a git repository.  It
+determines the build directory for the repository and runs the build from
+there. The first time that a specific compiler/ufid combination is used, the
+single C<configure> argument should be given after the ufid.
+
+The standard output and standard error streams are modified such that all path
+names are recast relative to the original directory rather than the build
+directory. All assert messages are rewritten to look like compiler
+messages. Both of these changes help visual tools such as emacs automatically
+find the error line in the source.
+=cut
+
+use English;
+use strict;
+use Cwd;
+
+use File::Spec;
+use File::Basename;
+
+my $cwd = Cwd::abs_path(cwd());
+print "cwd = $cwd\n";
+my $gitroot = `git rev-parse --show-toplevel`;
+chomp $gitroot;
+die "Not in a git repository" unless ($gitroot);
+
+# Find run directory that contains a _build subdirectory
+my $rundir;
+my @rundirs = ("$gitroot/..", "$gitroot");
+for my $dir (@rundirs) {
+    if ( -d "$dir/_build" ) {
+        $rundir = $dir;
+        last;
+    }
+}
+die "Can't find _build directory\n" unless $rundir;
+die "Can't find $rundir/CMakeLists.txt\n" unless "$rundir/CMakeLists.txt";
+
+# Note: If $rundir is $gitroot/.. (i.e., not inside a repository), then
+# The following should be in $rundir/CMakeLists.txt:
+    # cmake_minimum_required(VERSION 3.8)
+    #
+    # project("BDE_ws")
+    #
+    # include(bde_workspace)
+    #
+    # bde_process_workspace(
+    #     ${CMAKE_CURRENT_LIST_DIR}/bde
+    #     ${CMAKE_CURRENT_LIST_DIR}/bde-classic
+    #     ${CMAKE_CURRENT_LIST_DIR}/bte
+    # )
+
+
+# Look for "--ufid", "--compiler", or "-c" argument.
+my $ufidarg="";
+my $compilerarg="";
+for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
+    my $arg = $ARGV[$argidx];
+
+    if ($arg =~ m:^--ufid=(.*)$:) {
+        $ufidarg="--ufid=".$1;
+        splice @ARGV, $argidx, 1;
+    }
+    elsif ($arg eq "--ufid") {
+        $ufidarg="--ufid=".$ARGV[$argidx+1];
+        splice @ARGV, $argidx, 2;
+    }
+    elsif ($arg =~ m:^--compiler=(.*)$:) {
+        $compilerarg="--compiler=".$1;
+        splice @ARGV, $argidx, 1;
+    }
+    elsif ($arg eq "--compiler" or $arg eq "-c") {
+        $compilerarg="--compiler=".$ARGV[$argidx+1];
+        splice @ARGV, $argidx, 2;
+    }
+    else {
+        ++$argidx;
+    }
+}
+
+chdir $rundir;
+
+# Build cmake_build.py command line (with single-quotes around each arg)
+my $cmdline="eval \$(bde_build_env.py $ufidarg $compilerarg); ".
+    "cmake_build.py '".join("' '", @ARGV)."'";
+
+print STDERR "$cmdline\n";
+
+open BUILD, "$cmdline 2>&1 |"
+    or die "Cannot run command $cmdline\n";
+
+my %known_failures;
+my @ignored_failures;
+if (open IGNORE, "_build/known_failures.txt") {
+    while (defined (my $component = <IGNORE>)) {
+        chomp $component;
+        $component =~ s/^\s*#.*$//;
+        $known_failures{$component} = 1 if $component;
+        # print STDERR "Known failure: $component\n" if $component;
+    }
+    close IGNORE;
+}
+
+my $failurePrompt = "";
+my $ignoreCmakeStatus = 0;
+
+while (defined (my $buildline = <BUILD>))
+{
+    # Transform test assert failures into something emacs recognizes as an
+    # error message.
+    $buildline =~ s{^Error\s+([^(]+)\(([0-9]*)\):}{$1:$2: error: };
+
+    # Transform filenames that are relative to the git root into absolute path
+    # names, then to filenames that are relative to $cwd
+    if ( $buildline =~ m{^"([^"]+)"} or
+         $buildline =~ m{^([^:, ]+)[:,]} or
+         $buildline =~ m{^.* from ([^:, ]+):}) {
+        my $filename=$1;
+        my $relfilename=$filename;
+        # Paths are relative to 2nd-level build subdirectory. Convert to being
+        # relative to run directory itself.
+        $relfilename =~ s{^../../}{};
+        if ( -e $relfilename) {
+            my $absfilename = File::Spec->rel2abs($relfilename);
+            $relfilename = File::Spec->abs2rel($absfilename, $cwd);
+
+            # print "cwd = $cwd\n";
+            # print "filename = $filename\n";
+            # print "absfilename = $absfilename\n";
+            # print "relfilename = $relfilename\n";
+
+            # Replace filename prefix with path relative to $cwd
+            $buildline =~ s{\Q$filename\E}{$relfilename};
+        }
+    }
+
+    if ($buildline =~ m{^The following tests FAILED}) {
+        # Build succeeded.  Assume success until first non-ignored test failure
+        # is encountered.
+        $ignoreCmakeStatus = 1;
+        $failurePrompt = $buildline;
+        next;
+    }
+
+    if ($buildline =~ m{^([^: ]*/)*([^.:/ ]+)\.[.a-zA-Z0-9_]+:[0-9:]* *[Ee]rror:}
+        && $known_failures{$2}) {
+        $buildline =~ s{:}{ (ignored) };
+    }
+    elsif ($buildline =~ m{[0-9]+ - ([^\.]*)(\.[0-9]+)?\.t \(.*\)}) {
+        if ($known_failures{$1}) {
+            push @ignored_failures, $buildline;
+            next;
+        } else {
+            # A non-ignored test error has been encountered.
+            $ignoreCmakeStatus = 0;
+            print $failurePrompt; # Print prompt only if at least one failure
+            $failurePrompt = "";  # Print prompt only once
+        }
+    }
+
+    print STDERR $buildline;
+}
+
+print STDERR "The following failed tests were IGNORED:\n" if @ignored_failures;
+for my $failure (@ignored_failures) {
+    print STDERR  $failure;
+}
+
+close BUILD;    # Sets $? to exit status
+
+if ($ignoreCmakeStatus) {
+    # Report success if tests were run but any failures were ignored
+    exit 0
+}
+else {
+    # Report exit status from cmake
+    exit $? >> 8;
+}

@@ -1,0 +1,104 @@
+#! /bin/bash
+
+if [ $# -lt 1 ]
+then
+    echo "usage: hdrtest filename ..." >&2
+    exit 99
+fi
+
+INFILES=""
+SRCFILES=""
+OBJFILES=""
+
+preprocessOnly=false
+cmode=false
+if [ "x$1" = "x-E" ]
+then
+    preprocessOnly=true
+    shift
+elif [ "x$1" = "x-C" ]
+then
+    cmode=true
+    shift
+fi
+
+for file in "$@"
+do
+    if [ ! -f $file ]
+    then
+        if [ -f $file.h ]
+	then
+	    file=$file.h
+	elif [ -f $file.hh ]
+	then
+	    file=$file.hh
+	else
+	    echo "hdrtest: no such file: $file" >&2
+	    continue
+	fi
+    fi
+
+    if $cmode
+    then
+	# Compile using C compiler
+	cfile=hdrtest_${file}.c
+    else
+	# Compile using C++ compiler (default)
+	cfile=hdrtest_${file}.cc
+    fi
+    ofile=hdrtest_${file}.o
+    INFILES="$INFILES $file"
+    SRCFILES="$SRCFILES $cfile"
+    OBJFILES="$OBJFILES $ofile"
+    echo "#include \"$file\"" > $cfile
+done
+
+if [ -z "$SRCFILES" ]
+then
+    # No valid files
+    exit 2
+fi
+
+makefile=""
+for findfile in Makefile makefile ../src/Makefile ../src/makefile \
+		../Makefile ../makefile
+do
+    if [ -r $findfile ]
+    then
+	makefile=$findfile
+	break
+    fi
+done
+
+if [ -z $makefile ]
+then
+    # No makefile. Generate one from $(DEVAREA)/builds/environment.mk
+    cat > hdrtest_Makefile <<-EOF
+	SRCS=$SRCFILES
+	include \$(DEVAREA)/builds/environment.mk
+EOF
+    makefile=hdrtest_Makefile
+fi
+
+# Compile test files using existing makefile compiler options
+if $preprocessOnly
+then
+    make -f $makefile -k COPTIONS=-E $OBJFILES
+    ret=$?
+    for file in $INFILES
+    do
+	mv hdrtest_$file.o hdrtest_$file.i
+    done
+else
+    make -f $makefile -k $OBJFILES
+    ret=$?
+fi
+
+if [ -f hdrtest_Makefile ]
+then
+    rm -f hdrtest_Makefile
+fi
+
+rm -f $SRCFILES $OBJFILES
+
+exit $ret

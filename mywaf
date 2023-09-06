@@ -1,0 +1,153 @@
+#! /usr/bin/perl -w
+
+use English;
+use strict;
+
+use File::Basename;
+
+my $cwd       = $ENV{PWD} || `pwd`;
+chomp $cwd;
+
+# A list of projects in the order that they should go into $BDE_PATH
+# MAKE SURE THIS LIST STAYS IN SYNC WITH %projectDirs AND %projectLandmarks
+my @projects = qw(oss_tools tools bsl bdl bal btl bbl bde);
+
+# Default directories for each project
+# MAKE SURE THIS MAP STAYS IN SYNC WITH @projects AND %projectLandmarks
+my $bbcm = $ENV{HOME}."/bbcm";
+my $bbshr = "/bb/bde/bbshr";
+$bbshr = $bbcm unless -d $bbshr;
+my %projectDirs = (
+    oss_tools => "$bbshr/bde-oss-tools",
+    tools     => "$bbshr/bde-internal-tools",
+    bsl       => "$bbcm/bde",
+    bdl       => "$bbcm/bde",
+    bal       => "$bbcm/bde",
+    btl       => "$bbcm/bde",
+    bbl       => "$bbcm/bde",
+    bde       => "$bbcm/bde-classic"
+);
+
+# File or directory used to detect what project current directory belongs to.
+# MAKE SURE THIS MAP STAYS IN SYNC WITH @projects AND %projectDirs
+my %projectLandmarks = (
+    oss_tools => "bin/waf",
+    tools     => "bin/sim_cpp11_features.pl",
+    bsl       => "groups/bsl",
+    bdl       => "groups/bdl",
+    bal       => "groups/bal",
+    btl       => "groups/btl",
+    bbl       => "groups/bbl",
+    bde       => "groups/bde"
+);
+
+# We might have special copy of a project repository and invoke waf from
+# within that special copy.  In that case, we want to replace the default
+# repository directory with the special one in 'BDE_PATH'.
+#
+# Walk up the directory tree until we find the root of the repository, then
+# try to identify the project by locating a special file or directory unique
+# to that project.
+my $projectRoot;
+for ($projectRoot = $cwd;
+     $projectRoot ne "/" && $projectRoot ne "";
+     $projectRoot =~ s(/[^/]*$ )()xo ) {
+    if ( -e "$projectRoot/wscript" ) {
+        while (my ($project, $landmark) = each(%projectLandmarks)) {
+            if ( -e $projectRoot."/".$landmark ) {
+                # Found the project
+                $projectDirs{$project} = $projectRoot;
+                print "Project root is $projectRoot\n";
+                chdir($projectRoot);
+                last;
+            }
+        }
+        last;
+    }
+}
+
+# Construct $BDE_PATH from the project directories, in the correct order
+my $BDE_PATH = "";
+for my $project (@projects) {
+    $BDE_PATH .= ':' unless ("" eq $BDE_PATH);
+    $BDE_PATH .= $projectDirs{$project};
+}
+
+$ENV{BDE_PATH} = $BDE_PATH;
+print "BDE_PATH=$BDE_PATH\n";
+
+# my $tooldir = dirname `which bde_build.pl`;
+# $tooldir = "$buildroot/tools/bin" if ($tooldir eq ".");
+my $tooldir = $projectDirs{oss_tools}."/bin";
+
+$ENV{BDE_ROOT} = $projectDirs{tools};
+print "BDE_ROOT=$ENV{BDE_ROOT}\n";
+
+# Build waf command line
+my @cmdline = ( "waf" );
+my $ufidarg = "";
+for (my $argnum = 0; $argnum < @ARGV; ++$argnum) {
+    my $arg = $ARGV[$argnum];
+    if ($arg =~ m/^--ufid=/) {
+        # Add --ufid=value arg to bde_setwafenv.py, and omit from waf command.
+        $ufidarg = $arg;
+        next;
+    }
+    push @cmdline, $arg;
+}
+
+# Set waf environment using bde_setwafenv.py
+my $install_dir  = "$bbcm/install";
+my $setwafenv = `bde_setwafenv.py -i $install_dir $ufidarg`;
+for my $envline (split( /\n/, $setwafenv )) {
+    if ($envline =~ m/^export (.*)$/) {
+        # Set environment variable
+        my ($envname, $envvalue) = split( /=/, $1, 2 );
+        $envname =~ s/^\"(.*)\"$/$1/;   # Strip quotes
+        $envvalue =~ s/^\"(.*)\"$/$1/;  # Strip quotes
+        $ENV{$envname} = $envvalue;
+    }
+    elsif ($envline =~ m/^unset (.*)$/) {
+        # Delete environment variable
+        delete $ENV{$1};
+    }
+}
+
+my $ufid = $ENV{BDE_WAF_UFID};
+my $uplid = $ENV{BDE_WAF_UPLID};
+my $prefix = "$install_dir/$uplid-$ufid";
+
+print "BDE_WAF_BUILD_DIR=$ENV{BDE_WAF_BUILD_DIR}\n";
+print "prefix=$prefix\n";
+
+# exec @cmdline;
+my $cmdline="'".join("' '", @cmdline)."'";
+open BUILD, "$cmdline 2>&1 |"
+    or die "Cannot run command $cmdline\n";
+
+while (defined (my $buildline = <BUILD>))
+{
+    # Transform test assert failures into something emacs can parse
+    $buildline =~ s{^Error\s+([^(]*)\(([0-9]*)\):}{$1($2):};
+    $buildline =~ s{^../groups/}{$projectRoot/groups/};
+    $buildline =~ s{^../../groups/}{$projectRoot/groups/};
+    $buildline =~ s{^\"../groups/}{\"$projectRoot/groups/};
+    $buildline =~ s{^\"../../groups/}{\"$projectRoot/groups/};
+
+    # Transform header file paths in the install directory into their original
+    # paths.
+    if ($buildline =~ m{$prefix/include/(...)/([^_]*)(_[a-zA-Z0-9.]*)}) {
+        my $pkgGrp = $1;
+        my $pkg    = $2;
+        my $hdr    = $pkg.$3;
+        my $pkgDir = "$projectDirs{$pkgGrp}/groups/$pkgGrp/$pkg";
+
+        $buildline =~ s{$prefix/include/$pkgGrp/}{$pkgDir/}
+            if (-f "$pkgDir/$hdr");
+    }
+
+    print STDERR $buildline;
+}
+
+close BUILD;    # Sets $? to exit status
+exit $? >> 8;

@@ -1,0 +1,54 @@
+#! /bin/bash
+#
+# Reset the tag indicating the branch point for the specified branch (default
+# the current branch) to the new branch point (default the named branch from
+# which this branch was started).
+
+branch=""
+targetbranch=""
+branchbase=""
+
+if [ "$1" = "--at" ]; then
+    branchbase=$2
+    shift 2
+fi
+
+if [ "$1" = "--onto" ]; then
+    targetbranch=$2
+    shift 2
+    if ! git rev-parse $targetbranch > /dev/null 2>&1; then
+        echo >&2 No such branch or tag: $targetbranch
+        exit 2
+    fi
+fi
+
+if [ -z "$branchbase" ]; then
+    branchbase=$targetbranch
+fi
+
+if [ -z "$1" ]; then
+    branch="$(git symbolic-ref --short HEAD)"
+    if [ -z "$branch" ]; then
+        echo >&2 Not on a symbolic branch
+        exit 2
+    fi
+else
+    branch="$1"
+    if ! git rev-parse $branch > /dev/null 2>&1; then
+        echo >&2 No such branch: $branch
+        exit 2
+    fi
+fi
+
+branchbasetag="$branch"-base
+
+if [ -z "$targetbranch" ]; then
+    targetbranch=$(git tag -n 1 $branchbasetag | awk '/Branched from / { print $NF; }')
+    if [ -z "$targetbranch" ]; then
+        echo >&2 Cannot determine branch point.  Set with --onto
+        exit 2
+    fi
+fi
+
+echo "Setting base of $branch to $targetbranch"
+git tag -f -m "Branched from $targetbranch" $branchbasetag $branchbase

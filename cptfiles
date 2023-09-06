@@ -1,0 +1,18 @@
+#! /bin/bash
+#
+# For each component name in the command line, output the names of the three
+# files that make up that component.
+
+output=""
+
+for component in "$@"
+do
+    component=${component%.}
+    component=${component%.h}
+    component=${component%.t.cpp}
+    component=${component%.cpp}
+
+    output="$output $component.h $component.cpp $component.t.cpp"
+done
+
+echo $output

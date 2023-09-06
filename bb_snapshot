@@ -1,0 +1,36 @@
+#! /bin/bash
+
+# Copy files to names ending in timestamp.
+# E.g., xyz.pgh.docx -> xyz.pgh.190830_1502.docx, indicating that the
+# most recent save was at 2019-08-30, 3:02pm local time.
+
+initials=pgh  # Initials of author
+
+for file in "$@"; do
+    if [ ! -f "$file" ]; then
+        echo >&2 "No such file: $file"
+        exit 2
+    fi
+    ts=$(printf '%(%y%m%d_%H%M)T' $(stat --format %Y "$file"))
+    filebase=$(basename "$file")
+    filedir=$(dirname "$file")
+    fileext=${filebase##*.}
+    if [ "$fileext" = "$filebase" ] || [ "$fileext" = "$initials" ]; then
+        fileext=""
+    else
+        fileext=".$fileext"
+    fi
+    snapshotdir=$filedir/snapshots
+    tsfile="$snapshotdir/$filebase"
+    tsfile="${tsfile%$fileext}"             # Strip off file extension
+    tsfile="${tsfile%.$initials}"           # Strip off .initials, if any
+    tsfile="$tsfile.$initials.$ts$fileext"  # Append .initials.timestamp.ext
+    if [ -f "$tsfile" ]; then
+        echo "$tsfile already exists"
+        exit 1
+    fi
+    # echo cp -p "$file" "$tsfile"
+    mkdir -p "$snapshotdir"
+    (set -x; cp -p "$file" "$tsfile")
+    chmod -w "$tsfile"
+done

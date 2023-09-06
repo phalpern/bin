@@ -1,0 +1,65 @@
+#! /bin/bash
+
+usage()
+{
+    if [ $# -gt 0 ]
+    then
+        echo >&2 "$*"
+    fi
+    echo >&2 "Usage: cemacs [ -d <display> ] [ -v <view> ] [ <emacs-args> ]"
+    exit 2
+}
+
+# Choose the most desirable shell that exists on this system by checking each
+# shell path from least desirable to most desirable.
+for findsh in /usr/bin/ksh /bin/ksh /usr/local/bin/bash /usr/bin/bash /bin/bash
+do
+    if [ -x $findsh ]
+    then
+        SHELL=$findsh
+    fi
+done
+export SHELL
+
+if [ ${ENVDONE:-false} != true ]
+then
+    . $HOME/.env
+fi
+
+emacsbin=$(which emacs)
+# emacsbin=$(which emacs-21.1)
+# if [ ! -x "$emacsbin" ]
+# then
+#     emacsbin=emacs
+# fi
+
+emacsargs="-geometry 80x40 -f shell"
+
+set -- $(getopt "d:v:c" "$@")
+if [ $? != 0 ]
+then
+    usage
+fi
+
+while [ $# -gt 0 ]
+do
+    arg=$1
+    case $arg in
+    -d) export DISPLAY=$2; shift 2;;
+#    -v) targetview=$2; shift 2;;
+    -c) . ~/bin/csenv; shift ;;
+    --) shift; [ x$1 != x ] && emacsargs="$*"; break;;
+    *) usage "Invalid arg: $arg" ;;
+    esac
+done
+
+#color=white
+#color=LightSteelBlue
+color=PowderBlue
+#color=wheat
+
+font="Bitstream Vera Sans Mono-10"
+
+# If got here, then either clearcase is not available or
+# the target view is the same as the current view.
+$emacsbin -bg $color --font "$font" --title $(hostname) $emacsargs &

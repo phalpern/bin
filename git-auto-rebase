@@ -1,0 +1,108 @@
+#! /usr/bin/python3
+
+import sys
+import subprocess
+import re
+from pathlib import Path
+
+def runcmd(*cmd, errorstr=None):
+    """Run a command and return, as a string, whatever was written to
+    `stdout`. The command is specified as a list or tuple of strings, `cmd`
+    where the first string is the command name and the rest are arguments to
+    the command. If the output string has fewer than two lines, the trailing
+    newline is stripped. If the command returns a non-zero error code, the
+    calling program terminates after printing `errorstring`, if specified, or a
+    report of the failed commend otherwise. Note that the command is not, by
+    default, run in a shell; if shell execution is desired, specify `'bash',
+    '-c'` as the first two strings in `cmd`.
+    """
+
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+    if proc.returncode:
+        if errorstr is None:
+            errorstr = f"Failed command = '{' '.join(cmd)}'"
+        sys.exit(errorstr)
+    ret = str(proc.stdout)
+    if ret.count('\n') < 2: ret = ret.rstrip()
+    return ret
+
+def readAutorebaseStatus(autorebaseStatusFile):
+    """Return the branch and targetbranch from the auto-rebase status file"""
+    with open(autorebaseStatusFile) as statusfile:
+        branch, targetbranch = [ line.rstrip() for line in statusfile ]
+    return (branch, targetbranch)
+
+def writeAutorebaseStatus(autorebaseStatusFile, branch, targetbranch):
+    """Write the branch and targetbranch to the auto-rebase status file"""
+    with open(autorebaseStatusFile, "w") as statusfile:
+        statusfile.write(branch + '\n' + targetbranch + '\n')
+
+def rmfile(filename):
+    """Delete the fie with the specified `filename` if it exists; otherwise do
+    nothing. Symbolic links are followed and '~' directories are expanded in
+    `filename`."""
+    Path(filename).expanduser().resolve().unlink(missing_ok=True)
+
+sc_rebase, sc_continue, sc_abort = (0, 1, 2)   # Subcommand enum
+
+branch = None                   # Branch being rebased
+branchbasetag = None            # Tag for base of `branch`
+targetbranch = None             # Branch or tag onto which `branch` is rebased
+gitcmd = ['git', 'rebase']      # Git command to execute
+gitroot = runcmd('git', 'rev-parse', '--show-toplevel')  # Root of repo
+# status file holding name of branch and targetbranch
+autorebaseStatusFile = gitroot + "/.git/AUTO-REBASE"
+
+# Parse the arguments and construct `gitcmd`
+argv=sys.argv.copy()
+argv.append(None)
+nextarg = argv[1]
+subcommand = sc_rebase  # `sc_rebase`, `sc_continue`, or `sc_abort`
+for argindex in range(2, len(argv)):
+    arg = nextarg
+    nextarg = argv[argindex]
+    if arg is None: continue
+
+    if arg == "--onto":
+        targetbranch = nextarg
+        nextarg = None
+        continue  # Discard this argument. Do not append to gitcmd
+    elif arg == "--continue":
+        branch, targetbranch = readAutorebaseStatus(autorebaseStatusFile)
+        subcommand = sc_continue
+    elif arg == "--abort":
+        subcommand = sc_abort
+
+    gitcmd.append(arg)
+
+if subcommand == sc_abort:
+    rmfile(autorebaseStatusFile)
+    runcmd(*gitcmd)
+else:
+    if branch is None:
+        branch = runcmd('git', 'symbolic-ref', '--short', 'HEAD')
+
+    branchbasetag = branch + "-base"
+
+    if targetbranch is None:
+        tagcomment = runcmd('git', 'tag', '-n', '1', branchbasetag)
+        m = re.match(r'.* Branched from (.*)', tagcomment)
+        if m:
+            targetbranch = m[1]
+        else:
+            sys.exit(f"Can't read target branch from {branchbasetag} tag.");
+
+    # Test that targetbranch exists. Stderr is discarded.
+    runcmd('git', 'rev-parse', targetbranch,
+           errorstr=f"No such branch or tag: {targetbranch}")
+
+    if subcommand == sc_rebase:
+        gitcmd.extend(['--onto', targetbranch, branchbasetag])
+
+    writeAutorebaseStatus(autorebaseStatusFile, branch, targetbranch)
+
+    runcmd(*gitcmd)
+    runcmd('git', 'tag', '-f', '-m', f"Branched from {targetbranch}",
+           branchbasetag, targetbranch)
+
+    rmfile(autorebaseStatusFile)

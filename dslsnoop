@@ -1,0 +1,8 @@
+#! /bin/bash
+
+# Snoop on packets going to the internet,
+# excluding packets to/from truffle or brownie.
+# Must be run as root.
+
+/usr/sbin/tcpdump -i eth0 -q ether host 00:50:18:00:0F:FE \
+	and not host dsl_gateway and not host brownie and not host truffle

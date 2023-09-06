@@ -1,0 +1,30 @@
+#! /bin/bash
+#
+# Create and switch to a new git branch and make it so that it is
+# automatically created on the remote repository at the next push (but not
+# before).  NOTE: `git status` will give a warning about the upstream
+# being gone.  Ignore the warning!
+#
+# Usage: git-mkbranch <local-branch-name> [ <remote-branch-name> ]
+#
+#    local-branch-name:  Name of local branch
+#    remote-branch-name: Name of remote branch (default same as local branch)
+
+if [ $# -lt 1 ] || [ $# -gt 2 ] || [ "$1" = "--help" ]; then
+    echo >&2 "Incorrect number of arguments"
+    cmd="$(basename $0)"
+    echo >&2 "  Usage: $cmd <local-branch-name> [ <remote-branch-name> ]"
+    exit 2
+fi
+
+localbranch=$1
+remotebranch=${2:-$localbranch}
+frombranch=$(git branch --show-current)
+
+set -x
+git config push.default tracking
+# git branch $localbranch
+git switch -c $localbranch
+git config branch.$localbranch.remote origin
+git config branch.$localbranch.merge refs/heads/$remotebranch
+git tag -m "Branched from $frombranch" "$localbranch-base"

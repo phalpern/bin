@@ -1,0 +1,103 @@
+#! /usr/bin/perl -w
+
+use English;
+use strict;
+use Cwd;
+
+use File::Spec;
+use File::Basename;
+
+my $OS = `uname -s`;
+chomp $OS;
+
+my $CXX;
+# my $CXXPATH;
+if ($ENV{"CXX"}) {
+    $CXX=$ENV{"CXX"}
+}
+elsif ($OS eq "Darwin") {
+    $CXX = "clang++";
+    # $CXXPATH = `which $CXX`;
+    # chomp $CXXPATH;
+}
+else {
+    $CXX = "g++";
+    my $GCCDIR="/opt/bb/lib/gcc-9/bin";
+    # $CXXPATH = `PATH=\"$GCCDIR;\$PATH\" which $CXX`;
+    # chomp $CXXPATH;
+}
+
+# my $bde_verify_cmd = "\$HOME/bbcm/bde-verify/$OS-$CXX/bin/bde_verify";
+my $bde_verify_cmd = "\$HOME/bbcm/bde-verify/_build/bde_verify_bin";
+my $config_file    = "\$HOME/bbcm/bde-verify/bde_verify.cfg";
+# my $config_file    = "\$HOME/bde_verify.cfg";
+#$bde_verify_cmd .= " --config $config_file -cl 'suppress BW01 *'";
+$bde_verify_cmd .= " --config $config_file";
+
+# open PATHLIST, "$CXXPATH -E -xc++ -Wp,-v /dev/null 2>&1 |"
+#     or die "Cannot launch $CXXPATH -E";
+# my $insearch = 0;
+# foreach my $line (<PATHLIST>) {
+#     chomp $line;
+#     if ($line =~ /^#include ["<]\.\.\.[>"] search starts here:/) {
+#         $insearch = 1;
+#         next;
+#     }
+#     if ($line =~ /^End of search list./) {
+#         $insearch = 0;
+#         next;
+#     }
+#     if ($insearch) {
+#         foreach my $dir (split /\s+/, $line) {
+#             $bde_verify_cmd .= " -I$dir" if (-d $dir);
+#         }
+#     }
+# }
+# close PATHLIST;
+
+my $cwd = cwd();
+my $gitroot = `git rev-parse --show-toplevel`;
+chomp $gitroot;
+die "Not in a git repository" unless ($gitroot);
+
+# Look for "--ufid=<ufid>" or "--ufid <ufid>" argument.
+my $ufid="dbg_exc_mt_64_cpp11";
+my $argidx = -1;
+for my $arg (@ARGV) {
+    ++$argidx;
+    if ($arg =~ m:^--ufid=(.*)$:) {
+        $ufid=$1;
+        splice @ARGV, $argidx, 1;
+        last;
+    }
+    elsif ($arg eq "--ufid") {
+        $ufid=$ARGV[$argidx+1];
+        splice @ARGV, $argidx, 2;
+        last;
+    }
+}
+
+# Get build directory
+my $builddir=
+    `eval \$(bde_build_env.py --ufid=$ufid 2>/dev/null)
+     echo \$BDE_CMAKE_BUILD_DIR`;
+chomp $builddir;
+
+# Find run directory that contains a build subdirectory
+my $rundir;
+my @rundirs = ("$gitroot", "$gitroot/..");
+for my $dir (@rundirs) {
+    if ( -d "$dir/$builddir" ) {
+        $rundir = $dir;
+        $builddir="$dir/$builddir";
+        last;
+    }
+}
+die "Can't find $builddir directory\n" unless $rundir;
+
+# Build 'bde_verify' command line (with single-quotes around each arg)
+my $cmdline = "$bde_verify_cmd -p '$builddir' '".join("' '", @ARGV)."'";
+
+print STDERR "$cmdline\n";
+
+exit ! system("$cmdline");

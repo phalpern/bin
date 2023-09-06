@@ -1,0 +1,6 @@
+#! /bin/bash
+# Zip C++-related files.
+# Use same options as zip, except it is not necesary to specify
+# file names.
+
+zip "$@" -i '*.h' '*.cc' '*.cpp' '*.cld' '*.lex' '*.y' 'Makefile' 'makefile'

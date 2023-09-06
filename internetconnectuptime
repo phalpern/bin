@@ -1,0 +1,48 @@
+#! /bin/bash
+# Pings internetconnect DNS host once per minute and records
+# uptime and downtime of link.
+
+dnshost=206.111.47.3
+
+log=~/uptime.log
+if [ -f $log ]
+then
+    mv -f $log ${log}~
+fi
+
+echo "Came up at        Up for Went down at      Down for" > $log
+echo "----------------- ------ ----------------- ---------" >> $log
+
+if ping -q -c 2 -n $dnshost > /dev/null
+then
+    printf "%s" $(date +%y/%m/%d-%H:%M:%S) >> $log
+else
+    printf "                 " >> $log
+fi
+up=$(date +%s)
+
+while true
+do
+    # Sleep till link goes down
+    while ping -q -c 2 -n $dnshost > /dev/null
+    do
+	sleep 59
+    done
+
+    # Log uptime and time when going down
+    down=$(date +%s)
+    diff=$(($down - $up))
+    printf " %3d:%02d %s" $(($diff/3600)) $(($diff/60%60)) "$(date +%y/%m/%d-%H:%M:%S)" >> $log
+
+    # Sleep till link comes up
+    while ! ping -q -c 1 -n $dnshost > /dev/null
+    do
+	:	# No delay on failure. Ping timeout is enough (~10 sec)
+    done
+
+    # Log downtime and time when came up
+    up=$(date +%s)
+    diff=$(($up - $down))
+    printf " %3d:%02d:%02d\n%s" $(($diff/3600)) $(($diff/60%60)) $(($diff%60)) "$(date +%y/%m/%d-%H:%M:%S)" >> $log
+    sleep 60
+done

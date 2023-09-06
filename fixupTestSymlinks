@@ -1,0 +1,18 @@
+#! /bin/bash
+
+cd $DEVAREA/dlm/cli/test-parse
+
+# for header in $(find . \( -name '*.hh' -o -name '*.h' \) ! -type l)
+for header in $(cd ../include && ls *.h *.hh)
+do
+   if [ ! -r $header ]
+   then
+        echo ln -s ../include/$header .
+        ln -s ../include/$header .
+   elif [ ! -L $header ] && cmp $header ../include/$header > /dev/null
+   then
+        echo ln -s ../include/$header .
+        rm -f $header
+        ln -s ../include/$header .
+   fi
+done

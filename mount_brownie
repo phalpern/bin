@@ -1,0 +1,6 @@
+#! /bin/bash
+#
+# Mount //brownie/pablo on /home/pablo/brownie_home
+# Must be run as root
+
+mount -t smb -o username=Pablo,uid=phalpern,gid=users //brownie/pablo brownie_home

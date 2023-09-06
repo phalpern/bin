@@ -1,0 +1,88 @@
+#! /usr/bin/perl -w
+
+# Algorithm 1 (not used):
+# Escape HTML comments
+# Run through markdown script
+
+# Algorithm 2:
+# If code block
+#   Verbetim
+# else
+#   Surround HTML comments with newlines
+#   Wordwrap each line
+#   OR (not used) Break text into one sentence per line (long lines only?)
+# endif
+
+use File::Basename;
+use Text::Wrap;
+
+# diff is called by git with 7 parameters:
+# path old-file old-hex old-mode new-file new-hex new-mode
+
+my $gitpath = $ARGV[0];
+my (@infiles) = ($ARGV[1], $ARGV[4]);
+
+my @filenames;
+my @outfiles;
+
+my $fileindex = 0;
+my $incode = 0;
+my $md_literal = ($ENV{"MD_LITERAL"} or 0) > 0;
+for my $infilepath (@infiles) {
+    ++$fileindex;
+    my $filename = basename($infilepath);
+    my $outfilepath = "/tmp/$filename.$fileindex";
+    push @filenames, $filename;
+    push @outfiles, $outfilepath;
+
+    open $infile, "< $infilepath" or die "Can't open $infilepath\n";
+    open $outfile, "> $outfilepath" or die "Can't open $outfilepath\n";
+    while (my $line = <$infile>) {
+
+        if ($md_literal) {
+            print $outfile $line;
+            next;
+        }
+
+        if ($line =~ m{^```}) {
+            if ($line =~ m{^```cpp}) {
+                $incode = 1;
+            } else {
+                $incode = 1 - $incode;
+            }
+            print $outfile $line;
+            next;
+        }
+
+        if ($incode) {
+            print $outfile $line;
+            next;
+        }
+
+        if (length($line) < 80) {
+            print $outfile $line;
+            next;
+        }
+
+        $line =~ s{  *\n}{\n};                   # Remove trailing whitespace
+        $line =~ s{(.) *<!--}{$1\n<!--}g;        # Break before comment
+        $line =~ s{--> *(.)}{-->\n$1}g;          # Break after comment
+#        $line =~ s{([.:;!?])\s+(.)}{$1\n$2}g;  # Break at sentence boundaries
+        eval {$line = Text::Wrap::wrap("", "", $line); };
+        # leave $line unchanged if `Wrap` fails (probably due to absence of ws)
+        # die "Died on line: \"$line\"\n" if $@;
+
+        print $outfile $line;
+    }
+
+    close $infile;
+    close $outfile;
+}
+
+# system("kdiff3 --L1 \"$gitpath (A)\" --L2 \"$gitpath (B)\" \"$outfiles[0]\" \"$outfiles[1]\"");
+
+system("meld \"$outfiles[0]\" \"$outfiles[1]\"");
+# system("echo meld \"$outfiles[0]\" \"$outfiles[1]\"");
+
+unlink($outfiles[0]);
+unlink($outfiles[1]);

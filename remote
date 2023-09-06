@@ -1,0 +1,12 @@
+#! /bin/bash
+
+rhost=$1.bgs.com
+shift
+
+xhost $rhost
+
+view=$(cleartool pwv)
+
+#rsh -n $rhost "DISPLAY=$(hostname -f):0.0 ENV=.kshrc \
+rsh -n $rhost "DISPLAY=truffle.ultranet.com:0.0 ENV=.kshrc \
+	/usr/atria/bin/cleartool setview -exec \"$@\" $view" &

@@ -1,0 +1,3 @@
+#! /bin/bash
+
+bincmp.pl $1 $2/$1

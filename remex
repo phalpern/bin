@@ -1,0 +1,11 @@
+#! /bin/bash
+. ~/.bashrc
+PATH=$PATH:/usr/X11R6/bin:/usr/bin/mh
+if expr $1 : "DISPLAY="
+then
+    eval $1
+    export DISPLAY
+    shift
+fi
+
+"$@" < /dev/null > /dev/null 2>&1 &

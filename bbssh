@@ -1,0 +1,10 @@
+#! /bin/bash
+set -x
+remote_host=${1:-nylxdev2}
+shift
+if [ ! -S ~/.ssh/v5devgateway-control-master ]; then
+    # Create a control master
+    ssh v5devgateway.bdns.bloomberg.com -f -N -M -S ~/.ssh/v5devgateway-control-master
+fi
+export DISPLAY=:0.0
+exec ssh -X devgw -S ~/.ssh/v5devgateway-control-master -t inline dev $remote_host "$@"

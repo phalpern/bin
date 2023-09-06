@@ -1,0 +1,11 @@
+#! /usr/local/bin/python3
+
+import eyed3 as e3
+import sys
+
+mp3 = e3.load(sys.argv[1])
+
+# print(e3.core.Tag.__dict__.keys())
+print(mp3.__dict__.keys())
+
+print(f"Recording date = {mp3.tag.recording_date}, type {type(mp3.tag.recording_date)}")

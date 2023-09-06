@@ -1,0 +1,34 @@
+#! /usr/bin/perl -w
+
+use strict;
+use English;
+
+die "Usage: cap [ -f file | word ... ]\n" unless (@ARGV);
+
+if (@ARGV)
+{
+    if ($ARGV[0] eq "-f")
+    {
+	shift @ARGV;
+	die "Usage: cap [ -f file | word ... ]\n" unless (@ARGV);
+	my $infile = shift @ARGV;
+	if ($infile ne "-")
+	{
+	    open STDIN, "< $infile" or die "cap: Can't open file $infile\n";
+	}
+	while (defined(my $line = <STDIN>))
+	{
+	    print ucfirst $line;
+	}
+    }
+    else
+    {
+	my $word = shift @ARGV;
+	print ucfirst $word;
+	for my $word (@ARGV)
+	{
+	    print " ", ucfirst $word;
+	}
+	print "\n";
+    }
+}
