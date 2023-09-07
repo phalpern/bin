@@ -5,8 +5,8 @@ import re
 import os
 import textwrap
 from glob import glob
-from component_files import ComponentFiles
 
+# Global variables
 progname    = "PROGRAM"
 verbose     = False
 package     = None
@@ -19,6 +19,28 @@ include_pattern = r'^\s*#\s*include\s+["<](PKG_\w+).h[">]( *//.*\btesting\b)?'
 include_re      = None
 
 components = { }
+
+def component_files(*paths):
+    """Return a tuple of component files for the given path(s)"""
+    for path in paths:
+        component_path = suffix_re.sub('', path)
+        files = [ component_path + ".h", component_path + ".cpp" ]
+        if os.path.exists(component_path + ".0.t.cpp"):
+            # Has numbered tests
+            files.append(component_path + ".0.t.cpp")
+        else:
+            # Does not have numbered test files
+            files.append(component_path + ".t.cpp")
+            return tuple(files)
+        test_num = 1
+        while True:
+            test_path = component_path + '.' + str(test_num) + ".t.cpp"
+            if os.path.exists(test_path):
+                files.append(test_path)
+                test_num += 1
+            else:
+                break
+        return tuple(files)
 
 class component_stats:
 
@@ -130,7 +152,7 @@ class component_stats:
         return
 
     def get_direct_deps(self):
-        hdr_file, imp_file, *test_files = ComponentFiles(self.component_name)
+        hdr_file, imp_file, *test_files = component_files(self.component_name)
 
         self.component_deps = self.get_file_deps(hdr_file).union(
             self.get_file_deps(imp_file, self.testonly_deps))
