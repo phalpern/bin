@@ -4,13 +4,16 @@ import sys
 import re
 import os
 import textwrap
-from pprint import pprint
+from glob import glob
 from component_files import ComponentFiles
 
+progname    = "PROGRAM"
+verbose     = False
 package     = None
 package_dir = None
 
-suffix_re  = re.compile(r"(_cpp03)?\.(h|cpp|([0-9]+\.)?t\.cpp)?$")
+suffix_re = re.compile(r"\.(h|cpp|([0-9]+\.)?t\.cpp)?$")
+cpp03_re  = re.compile(r"_cpp03$")
 
 include_pattern = r'^\s*#\s*include\s+["<](PKG_\w+).h[">]( *//.*\btesting\b)?'
 include_re      = None
@@ -34,6 +37,8 @@ class component_stats:
         self.testonly_cycles           = set()
         self.component_level           = 0     # excludes test driver
         self.testonly_level            = 0     # includes test driver
+        self.error_count               = 0
+        self.warning_count             = 0
         components[component_name] = self
 
     def __less__(self, other):
@@ -44,41 +49,34 @@ class component_stats:
         ret += f"    Level number = {self.component_level}, " +      \
             f"Test driver level number = {self.testonly_level}\n"
 
-        errors = 0
-        warnings = 0
-
         if self.component_cycles:
-            errors += 1
             ret += "    Error: Dependency cycles detected:\n"
             for cycle in self.component_cycles:
                 ret += self.format_cycle(cycle) + '\n'
 
         if self.excess_test_deps:
-            errors += 1
-            ret += "    Error: Undocumented test-only dependencies:\n"
+            ret += "    Warning: Undocumented test-only dependencies:\n"
             for dep in sorted(self.excess_test_deps):
                 ret += "        " + dep + '\n'
 
         if self.testonly_cycles:
-            warnings += 1
             ret += "    Warning: Test-only dependency cycles:\n"
             for cycle in self.testonly_cycles:
                 ret += self.format_cycle(cycle) + '\n'
 
         if self.component_level < self.testonly_level:
-            warnings += 1
             ret += "    Warning: test driver has larger level number " + \
                 "than component\n"
 
         if self.false_test_deps:
-            warnings += 1
             ret += "    Warning: dependencies incorrectly marked " + \
                 "'for testing only':\n"
             for dep in sorted(self.false_test_deps):
                 ret += "        " + dep + '\n'
 
-        if errors or warnings:
-            ret += f"    {errors} Errors, {warnings} Warnings\n"
+        if self.error_count or self.warning_count:
+            ret += (f"    {self.error_count} Errors, " +
+                    f"{self.warning_count} Warnings\n")
         else:
             ret += "    No errors or warnings\n"
 
@@ -127,6 +125,8 @@ class component_stats:
         self.visiting = False
         self.visited  = True
 
+        self.count_errors_and_warnings()
+
         return
 
     def get_direct_deps(self):
@@ -140,6 +140,7 @@ class component_stats:
                     inc not in self.testonly_deps):
                     self.testonly_deps.add(inc)
                     self.excess_test_deps.add(inc)
+                    self.warning_count += 1
         self.false_test_deps = \
             self.testonly_deps.intersection(self.component_deps)
         self.testonly_deps   = \
@@ -189,6 +190,15 @@ class component_stats:
             (component, testdep) = cycle[i]
             component.component_cycles.add(cycle[i:]+cycle[:i])
 
+    def count_errors_and_warnings(self):
+        self.error_count   = 0
+        self.warning_count = 0
+        if self.component_cycles:                      self.error_count += 1
+        if self.excess_test_deps:                      self.warning_count += 1
+        if self.false_test_deps:                       self.warning_count += 1
+        if self.testonly_cycles:                       self.warning_count += 1
+        if self.component_level < self.testonly_level: self.warning_count += 1
+
 def visit_by_name(component_name, path = tuple()):
 
     if component_name in components:
@@ -198,27 +208,88 @@ def visit_by_name(component_name, path = tuple()):
     component.visit(path)
     return component
 
-if __name__ == "__main__":
-    component_set = set()
-    for name in sys.argv[1:]:
-        component_path = suffix_re.sub("", name)
-        component_name = os.path.basename(component_path)
+def usage(error_str = None):
+    if error_str is not None:
+        print(error_str, file=sys.stderr)
+    print(f"Usage: {progname} [--help] [--verbose] " +
+          "[component|package]...", file=sys.stderr)
 
-        if package is None:
+def process_args(argv):
+    global progname
+    global verbose
+
+    progname = os.path.basename(argv[0])
+    cpt_args = []
+    for arg in argv[1:]:
+        if arg == "--help":
+            usage()
+            return None
+        elif arg == "--verbose":
+            verbose = True
+            continue
+        elif arg.startswith("-"):
+            usage(f"Invalid option: {arg}")
+            return None
+        else:
+            cpt_args.append(arg)
+
+    if not cpt_args:
+        cpt_args = [ "." ]
+
+    # TBD: Error handling for missing directories or components belongs below
+    ret = []
+    for arg in cpt_args:
+        if os.path.isdir(arg):
+            package_path  = arg
+            mem_file_glob = os.path.join(package_path, "package", "*.mem")
+            mem_file_list = glob(mem_file_glob)
+            assert(1 == len(mem_file_list))
+            with open(mem_file_list[0], 'r') as mem_file:
+                mem_file_content = mem_file.read()
+                mem_file_content = \
+                    re.sub("#.*$", "", mem_file_content, re.MULTILINE)
+                ret += map(lambda x: os.path.join(package_path, x),
+                           re.findall(r"(\w+)", mem_file_content))
+        else:
+            ret.append(arg)
+
+    return ret
+
+if __name__ == "__main__":
+    args = process_args(sys.argv)
+    if args is None:
+        exit(1)
+
+    component_map = dict()
+    for name in args:
+        if name == "": continue
+        component_path = cpp03_re.sub("", suffix_re.sub("", name))
+        component_name = os.path.basename(component_path)
+        component_map[component_name] = component_path
+
+    total_error_count   = 0
+    total_warning_count = 0
+    original_dir = os.getcwd()
+    for component_name, component_path in sorted(component_map.items()):
+
+        if package != component_name.split('_')[0]:
             package_path = os.path.dirname(component_path)
             package      = component_name.split('_')[0]
+            os.chdir(original_dir)
             if package_path:
                 os.chdir(package_path)
             include_re = re.compile(include_pattern.replace("PKG", package),
                                     re.MULTILINE)
-        else:
-            assert(package_path == os.path.dirname(component_path))
-            assert(package      == component_name.split('_')[0])
 
-        component_set.add(component_name)
+        component = visit_by_name(component_name)
+        total_error_count   += component.error_count
+        total_warning_count += component.warning_count
+        if verbose or component.error_count > 0 or component.warning_count > 0:
+            print(component)
 
-    for component_name in component_set:
-        visit_by_name(component_name)
-    for component_name in sorted(component_set):
-        print(components[component_name])
-        # pprint(vars(components[component_name]))
+    if total_error_count or total_warning_count:
+        print(f"Total: {total_error_count} errors, " +
+              f"{total_warning_count} warnings", file=sys.stderr)
+
+    if total_error_count:
+        exit(total_error_count)
