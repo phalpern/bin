@@ -1,5 +1,25 @@
 #! /usr/bin/python3
 
+# Usage: renumber_tests.py <filename>
+#
+# The specified file must be in the form of a BDE test driver. Tests are
+# renumbered in decending order of appearance.  Negative-numbered tests are not
+# renumbered.  The table of contents at the begining of the test plan is
+# modified to correspond to the renumbering; if a test is removed, any
+# reference to that test in the TOC is replaced with a blank testcase number.
+#
+# To delete or reorder tests in the test driver, simply edit the test driver as
+# desired.  To insert a test case, assign it a short alphanumeric label
+# starting with a letter, e.g., `case NEW: {`.  New test cases will be assigned
+# numbers during renumbering.  You can add new test cases to the TOC using the
+# invented tag(s).
+#
+# Before renumbering, a backup of the test driver is made with a filename
+# ending in `.bak`.  It is recommended that you diff the original and the
+# backup before committing.  Only one backup is created, so running this tool
+# multiple times will overwrite older backups (except that, if the script makes
+# no changes, no backups are created).
+
 import sys
 import os
 import re
@@ -43,8 +63,6 @@ def find_case_lines(code):
 
     for lineidx, line in enumerate(lines):
 
-        # print(f"{linenum + 1}: {line}")
-
         if brace_depth == 0 and main_re.match(line):
             in_main = True
 
@@ -52,7 +70,6 @@ def find_case_lines(code):
             continue
 
         if switch_re.match(line):
-            # print(f"Found 'switch' on line {lineidx + 1}: {line}")
             switch_stack.append(switch_depth) # Save old depth
             switch_depth = brace_depth  # Depth *before* switch
             switch_nesting += 1  # Increment nesting level
@@ -61,7 +78,6 @@ def find_case_lines(code):
         if switch_nesting == 1:
             case_match = case_re.match(line)
             if case_match:
-                # print(f"Line {lineidx + 1}: {line}")
                 cases.append(( lineidx, case_match[1] ))
 
         # Count braces to determine scope
@@ -133,7 +149,6 @@ with open(filename, 'r') as file:
     oldcode = file.read()
 
 testcases = find_case_lines(oldcode)
-# print(testcases)
 
 newcode = renumber_testcases(oldcode, testcases)
 
