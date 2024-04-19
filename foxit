@@ -1,0 +1,6 @@
+#! /bin/bash
+
+for file in "$@"; do
+    "/mnt/c/Program Files (x86)/Foxit Software/Foxit PDF Reader/FoxitPDFReader.exe" \
+        "$(wslpath -w "$file")"
+done

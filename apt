@@ -1,0 +1,15 @@
+#! /bin/bash
+
+if [ "root" != $(whoami) ]; then
+    exec sudo $0 "$@"
+    echo >&2 apt must be run as super-user
+    exit 2
+fi
+
+if ping -c 1 -w 1 proxy.bloomberg.com > /dev/null; then
+    cp /etc/apt/apt.conf.d/proxy.conf.bloomberg /etc/apt/apt.conf.d/proxy.conf
+else
+    rm -f /etc/apt/apt.conf.d/proxy.conf
+fi
+
+exec /usr/bin/apt "$@"
