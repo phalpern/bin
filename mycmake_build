@@ -64,9 +64,9 @@ die "Not in a git repository" unless ($gitroot);
 
 # Find run directory that contains a _build subdirectory
 my $rundir;
-my @rundirs = ("$gitroot/..", "$gitroot");
+my @rundirs = ("$gitroot", "$gitroot/..");
 for my $dir (@rundirs) {
-    if ( -d "$dir/_build" ) {
+    if ( -d "$dir/_install" ) {
         $rundir = $dir;
         last;
     }
