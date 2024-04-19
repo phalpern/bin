@@ -133,7 +133,7 @@ class component_stats:
         # traversing non-test dependencies.  That way, only level differences
         # corresponding to *this* component are reflected in the level
         # variables.
-        level = 0
+        level = 1
         for dependency_name in self.component_deps:
             dependency = visit_by_name(dependency_name,
                                        path + ((self, False),))
@@ -256,7 +256,8 @@ def process_args(argv):
             cpt_args.append(arg)
 
     if not cpt_args:
-        cpt_args = [ "." ]
+        usage()
+        return None
 
     # TBD: Error handling for missing directories or components belongs below
     ret = []
