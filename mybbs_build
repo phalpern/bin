@@ -58,20 +58,47 @@ use File::Spec;
 use File::Basename;
 
 my $cwd = Cwd::abs_path(cwd());
-print "cwd = $cwd\n";
-my $gitroot = `git rev-parse --show-toplevel`;
-chomp $gitroot;
-die "Not in a git repository" unless ($gitroot);
+print STDERR "cwd = $cwd\n";
 
-# Find directory that contains a _install subdirectory
-my $install_dir;
-for my $dir ("$gitroot/..", "$gitroot") {
-    if ( -d "$dir/_install" ) {
-        $install_dir = "$dir/_install";
+# If we're in a git repo, try to find the workspace in the parent dir, else see
+# if we can build in the repo root Otherwise, see if we can build in the
+# current directory.
+my @buildroot_searchpath;
+my $reporoot = `git rev-parse --show-toplevel 2> /dev/null`;
+chomp $reporoot;
+if ( $reporoot ) {
+    print STDERR "repo root = $reporoot\n";
+    @buildroot_searchpath = ( dirname($reporoot), $reporoot, $cwd );
+}
+else {
+    print STDERR "Not in a git repository\n";
+    @buildroot_searchpath = ( $cwd );
+}
+
+# Find the root directory for building.
+# If doing a workspace build, parent directory of the repo(s) you are building
+# must have a CMakeLists.txt file with the following contents:
+#
+# # CMakeLists.txt for a workspace
+# cmake_minimum_required(VERSION 3.22)
+# project(workspace)
+#
+# enable_testing()
+#
+# add_subdirectory(bde)
+# add_subdirectory(bde-classic)
+#
+my $buildroot;
+for my $dir (@buildroot_searchpath) {
+    if ( -d "$dir/_build" and -f "$dir/CMakeLists.txt" ) {
+        $buildroot = "$dir";
+        print STDERR "Build root = $buildroot\n";
         last;
     }
 }
-die "Can't find _install directory\n" unless $install_dir;
+die "Can't find root directory containing '_build' dir and 'CMakeLists.txt'\n"
+    unless $buildroot;
+
 
 # Look for "--ufid", "--profile", or "-p" argument.
 my $ufidarg="";
@@ -100,10 +127,10 @@ for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
     }
 }
 
-chdir $gitroot;
+chdir $buildroot;
 
 # Build bbs_build command line (with single-quotes around each arg)
-my $cmdline="eval \$(bbs_build_env -i $install_dir $ufidarg $profilearg); ".
+my $cmdline="eval \$(bbs_build_env $ufidarg $profilearg); ".
     "bbs_build '".join("' '", @ARGV)."'";
 
 print STDERR "$cmdline\n";
