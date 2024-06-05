@@ -1,0 +1,22 @@
+#! /bin/bash
+
+homebin="$HOME/bin"
+
+# If command is found in home binary folder, use full path to command;
+# otherwise, leave command unchanged.
+cmd=$(which "$1")
+if [ "${cmd#$homebin}" = "$cmd" ]; then
+    cmd="$1"
+fi
+shift
+
+# If current directory is a subdirectory of $HOME, then set docker instance
+# to current directory; otherwise, use the default "/workspace"
+wd="/workspace"
+if [ "${PWD#$HOME}" != "$PWD" ]; then
+   wd="$PWD"
+fi
+
+# Run docker with the current uid and gid, mounting my home directory using
+# same path name and setting the working directory to $wd.
+exec docker run --rm -v "$HOME:$HOME" -u $(id -u):$(id -g) -w "$wd" bdebuildbase "$cmd" "$@"

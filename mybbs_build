@@ -2,45 +2,46 @@
 
 =pod
 
-Run cmake_build.py conveniently for desired compiler and ufid.
+Run bbs_build conveniently for desired compiler and ufid.
 
 Using this script instead of calling cmake_build.py directly simplifies the
-workflow when switching among compilers and ufids.  Thus, instead of:
+workflow when switching among compilers/profiles and ufids.  Thus, instead of:
 
     pushd ~/bde/_build
 
-    eval $(bde_build_env.py --ufid dbg_exc_mt_64)
-    cmake_build.py --targets=bslstl_vector.t --tests=run build
+    eval $(bbs_build_env --ufid dbg_exc_mt_64)
+    bbs_build --targets=bslstl_vector.t --tests=run build
 
-    eval $(bde_build_env.py --ufid dbg_exc_mt_64_cpp11)
-    cmake_build.py --targets=bslstl_vector.t --tests=run build
+    eval $(bbs_build_env --ufid dbg_exc_mt_64_cpp11)
+    bbs_build.py --targets=bslstl_vector.t --tests=run build
 
-    eval $(bde_build_env.py -c gcc --ufid dbg_exc_mt_64_cpp17)
-    cmake_build.py --targets=bslstl_vector.t --tests=run build
+    eval $(bbs_build_env -p BBToolchain32 --ufid dbg_exc_mt_64_cpp17)
+    bbs_build.py --targets=bslstl_vector.t --tests=run build
 
     popd
 
 Simply type
 
-    mycmake_build  --ufid dbg_exc_mt_64 --targets=bslstl_vector.t --tests=run build
-    mycmake_build  --ufid dbg_exc_mt_64_cpp11 --targets=bslstl_vector.t --tests=run build
-    mycmake_build -c gcc --ufid dbg_exc_mt_64_cpp17 --targets=bslstl_vector.t --tests=run build
+    mybbs_build  --ufid dbg_exc_mt_64 --targets=bslstl_vector.t --tests=run build
+    mybbs_build  --ufid dbg_exc_mt_64_cpp11 --targets=bslstl_vector.t --tests=run build
+    mybbs_build -p BBToolchain32 --ufid dbg_exc_mt_64_cpp17 --targets=bslstl_vector.t --tests=run build
 
 Note that there is no need to change directory nor is there a risk of
 forgetting the current configuration.
 
 Usage:
 
-    mycmake_build [ -c <compiler> ] [ --ufid <ufid> ] <cmake_build.py-options>
+    mybbs_build [ -p <profile> ] [ --ufid <ufid> ] <bbs_build-options>
 
 or
 
-    mycmake_build [ -c <compiler> ] [ --ufid <ufid> ] configure
+    mybbs_build [ -p <profile> ] [ --ufid <ufid> ] configure
 
 This command must be executed in directory within a git repository.  It
-determines the build directory for the repository and runs the build from
-there. The first time that a specific compiler/ufid combination is used, the
-single C<configure> argument should be given after the ufid.
+determines the build and install directories for the repository and target and
+runs the build from the root of the repository. The first time that a specific
+compiler/ufid combination is used, the single C<configure> argument should be
+given after the ufid.
 
 The standard output and standard error streams are modified such that all path
 names are recast relative to the original directory rather than the build
@@ -62,36 +63,19 @@ my $gitroot = `git rev-parse --show-toplevel`;
 chomp $gitroot;
 die "Not in a git repository" unless ($gitroot);
 
-# Find run directory that contains a _build subdirectory
-my $rundir;
-my @rundirs = ("$gitroot", "$gitroot/..");
-for my $dir (@rundirs) {
+# Find directory that contains a _install subdirectory
+my $install_dir;
+for my $dir ("$gitroot/..", "$gitroot") {
     if ( -d "$dir/_install" ) {
-        $rundir = $dir;
+        $install_dir = "$dir/_install";
         last;
     }
 }
-die "Can't find _build directory\n" unless $rundir;
-die "Can't find $rundir/CMakeLists.txt\n" unless "$rundir/CMakeLists.txt";
+die "Can't find _install directory\n" unless $install_dir;
 
-# Note: If $rundir is $gitroot/.. (i.e., not inside a repository), then
-# The following should be in $rundir/CMakeLists.txt:
-    # cmake_minimum_required(VERSION 3.8)
-    #
-    # project("BDE_ws")
-    #
-    # include(bde_workspace)
-    #
-    # bde_process_workspace(
-    #     ${CMAKE_CURRENT_LIST_DIR}/bde
-    #     ${CMAKE_CURRENT_LIST_DIR}/bde-classic
-    #     ${CMAKE_CURRENT_LIST_DIR}/bte
-    # )
-
-
-# Look for "--ufid", "--compiler", or "-c" argument.
+# Look for "--ufid", "--profile", or "-p" argument.
 my $ufidarg="";
-my $compilerarg="";
+my $profilearg="-p gcc-11.3.0";
 for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
     my $arg = $ARGV[$argidx];
 
@@ -103,12 +87,12 @@ for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
         $ufidarg="--ufid=".$ARGV[$argidx+1];
         splice @ARGV, $argidx, 2;
     }
-    elsif ($arg =~ m:^--compiler=(.*)$:) {
-        $compilerarg="--compiler=".$1;
+    elsif ($arg =~ m:^--profile=(.*)$:) {
+        $profilearg="-p ".$1;
         splice @ARGV, $argidx, 1;
     }
-    elsif ($arg eq "--compiler" or $arg eq "-c") {
-        $compilerarg="--compiler=".$ARGV[$argidx+1];
+    elsif ($arg eq "--profile" or $arg eq "-p") {
+        $profilearg="-p ".$ARGV[$argidx+1];
         splice @ARGV, $argidx, 2;
     }
     else {
@@ -116,11 +100,11 @@ for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
     }
 }
 
-chdir $rundir;
+chdir $gitroot;
 
-# Build cmake_build.py command line (with single-quotes around each arg)
-my $cmdline="eval \$(bde_build_env.py $ufidarg $compilerarg); ".
-    "cmake_build.py '".join("' '", @ARGV)."'";
+# Build bbs_build command line (with single-quotes around each arg)
+my $cmdline="eval \$(bbs_build_env -i $install_dir $ufidarg $profilearg); ".
+    "bbs_build '".join("' '", @ARGV)."'";
 
 print STDERR "$cmdline\n";
 
