@@ -22,8 +22,8 @@ workflow when switching among compilers/profiles and ufids.  Thus, instead of:
 
 Simply type
 
-    mybbs_build  --ufid dbg_exc_mt_64 --targets=bslstl_vector.t --tests=run build
-    mybbs_build  --ufid dbg_exc_mt_64_cpp11 --targets=bslstl_vector.t --tests=run build
+    mybbs_build --ufid dbg_exc_mt_64 --targets=bslstl_vector.t --tests=run build
+    mybbs_build --ufid dbg_exc_mt_64_cpp11 --targets=bslstl_vector.t --tests=run build
     mybbs_build -p BBToolchain32 --ufid dbg_exc_mt_64_cpp17 --targets=bslstl_vector.t --tests=run build
 
 Note that there is no need to change directory nor is there a risk of
@@ -33,11 +33,7 @@ Usage:
 
     mybbs_build [ -p <profile> ] [ --ufid <ufid> ] <bbs_build-options>
 
-or
-
-    mybbs_build [ -p <profile> ] [ --ufid <ufid> ] configure
-
-This command must be executed in directory within a git repository.  It
+If this command is executed in directory within a git repository, it
 determines the build and install directories for the repository and target and
 runs the build from the root of the repository. The first time that a specific
 compiler/ufid combination is used, the single C<configure> argument should be
@@ -102,7 +98,7 @@ die "Can't find root directory containing '_build' dir and 'CMakeLists.txt'\n"
 
 # Look for "--ufid", "--profile", or "-p" argument.
 my $ufidarg="";
-my $profilearg="-p gcc-11.3.0";
+my $profilearg="";
 for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
     my $arg = $ARGV[$argidx];
 
