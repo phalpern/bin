@@ -158,4 +158,4 @@ else:
     os.replace(filename, filename + ".bak")
     with open(filename, 'w') as file:
         file.write(newcode)
-    print("Renumbering complete. Old file saved as {filename}.bak.")
+    print(f"Renumbering complete. Old file saved as {filename}.bak.")
