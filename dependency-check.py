@@ -15,7 +15,7 @@ package_dir = None
 suffix_re = re.compile(r"\.(h|cpp|([0-9]+\.)?t\.cpp)?$")
 cpp03_re  = re.compile(r"_cpp03$")
 
-include_pattern = r'^\s*#\s*include\s+["<](PKG_\w+).h[">]( *//.*\btesting\b)?'
+include_pattern = r'^\s*#\s*include\s+["<](PKG_\w+).h[">](?i:( *//.*\btesting\b)?)'
 include_re      = None
 
 components = { }
@@ -28,8 +28,12 @@ def component_files(*paths):
         if os.path.exists(component_path + ".0.t.cpp"):
             # Has numbered tests
             files.append(component_path + ".0.t.cpp")
+        elif os.path.exists(component_path + ".xt.cpp"):
+            # Has split tests
+            files.append(component_path + ".xt.cpp")
+            return tuple(files)
         else:
-            # Does not have numbered test files
+            # Does not have numbered or split test files
             files.append(component_path + ".t.cpp")
             return tuple(files)
         test_num = 1
@@ -139,6 +143,7 @@ class component_stats:
                                        path + ((self, False),))
             level = max(level, dependency.testonly_level + 1)
         self.component_level = level
+        print(f"test-only deps: {self.testonly_deps}\n")
         for dependency_name in self.testonly_deps:
             dependency = visit_by_name(dependency_name, path + ((self, True),))
             level = max(level, dependency.testonly_level + 1)

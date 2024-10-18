@@ -26,10 +26,10 @@ while (defined($line = <STDIN>))
 {
     $line =~ s/assert/ASSERT/g;
 
-    if ($line =~ m(^//\.\.))
+    if ($line =~ m(^// ?```) or $line =~ m(^//\.\.))
     {
         $isCode = ! $isCode;
-        print $line;
+        print "// ```\n";
         next;
     }
 

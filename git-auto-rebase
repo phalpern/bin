@@ -12,7 +12,7 @@ def runcmd(*cmd, errorstr=None):
     the command. If the output string has fewer than two lines, the trailing
     newline is stripped. If the command returns a non-zero error code, the
     calling program terminates after printing `errorstring`, if specified, or a
-    report of the failed commend otherwise. Note that the command is not, by
+    report of the failed command otherwise. Note that the command is not, by
     default, run in a shell; if shell execution is desired, specify `'bash',
     '-c'` as the first two strings in `cmd`.
     """
