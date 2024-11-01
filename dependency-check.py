@@ -73,7 +73,11 @@ class component_stats:
     def __str__(self):
         ret = f"Component {self.component_name}:\n";
         ret += f"    Level number = {self.component_level}, " +      \
-            f"Test driver level number = {self.testonly_level}\n"
+            f"Test-driver level number = {self.testonly_level}\n"
+
+        ret += f"    Num test-only dependencies = {len(self.testonly_deps)}\n"
+        if verbose and self.testonly_deps:
+            ret += f"        Test-only dependencies = {self.testonly_deps}\n"
 
         if self.component_cycles:
             ret += "    Error: Dependency cycles detected:\n"
@@ -143,7 +147,7 @@ class component_stats:
                                        path + ((self, False),))
             level = max(level, dependency.testonly_level + 1)
         self.component_level = level
-        print(f"test-only deps: {self.testonly_deps}\n")
+        # print(f"test-only deps: {self.testonly_deps}\n")
         for dependency_name in self.testonly_deps:
             dependency = visit_by_name(dependency_name, path + ((self, True),))
             level = max(level, dependency.testonly_level + 1)
