@@ -1,0 +1,110 @@
+#! /bin/bash
+#
+# Keep track of the status of VPN.  This script is called from the Windows Task
+# Scheduler with option `--up` when a new connection is detected and the VPN is
+# up and with `--down` when a connection failure is detected and the VPN is
+# down.  Note that connections unrelated to the VPN can come and go, so this
+# script can be called spuriously (e.g., if a new connection is detected and
+# the vpn is already connected).  For that reason, this script will ignore
+# `--up` and `--down` if they are duplicates of the current state.
+#
+# This script will also query the state of the VPN (with no argument or with
+# the `--stat` argument) and can dump appropriate proxy environment variable
+# definitions (if called with the `--env` argument).
+#
+# Add commands to the `onVpnUp` and `onVpnDown` functions, below, to cause
+# those commands to run on a vpn state change.
+
+function onVpnUp
+{
+    cp /etc/apt/apt.conf.d/proxy.conf.bloomberg /etc/apt/apt.conf.d/proxy.conf
+    ~/bin/update-ssh-names
+}
+
+function onVpnDown
+{
+    cp /dev/null /etc/apt/apt.conf.d/proxy.conf
+}
+
+function usage
+{
+    cat <<EOF >&2
+Usage:
+  Silently returns success if connected : bbvpn [ --stat ]
+  Register vpn as being connected       : bbvpn --up
+  Register vpn as being disconnected    : bbvpn --down
+  Dump proxy environment variables      : bbvpn --env
+EOF
+
+    exit 2
+}
+
+# The status file should always exist. It is set to writable if the VPN is in a
+# connected (up) state and is otherwise read-only.
+statusfile=/etc/bbVPN/status.txt
+
+if [ ! -f $statusfile ]; then
+    echo "This file is writable if VPN is connected, else read-only." > $statusfile
+    chmod a+r,a-w $statusfile
+fi
+
+# Set vpn status to UP
+function setStatusUp
+{
+    chmod a+w $statusfile
+}
+
+# Set vpn status to DOWN
+function setStatusDown
+{
+    chmod a-w $statusfile
+}
+
+# Return last-known status of bbvpn.  Returns success if UP, failure if DOWN.
+function lastStatus
+{
+    if [ -w $statusfile ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+function dumpenv
+{
+    if [ -w $statusfile ]; then
+        cat <<EOF
+export http_proxy=http://devproxy.bloomberg.com:82
+export https_proxy=http://devproxy.bloomberg.com:82
+export no_proxy="*.bloomberg.com,*.bloomberg.net"
+EOF
+    else
+        cat <<EOF
+unset http_proxy
+unset https_proxy
+export no_proxy="*"
+EOF
+    fi
+}
+
+case "${1:---stat}" in
+    --help) usage ;;
+    --stat) if lastStatus; then
+                exit 0
+            else
+                exit 1
+            fi
+            ;;
+    --up)   if ! lastStatus; then
+                setStatusUp
+                onVpnUp
+            fi
+            ;;
+    --down) if lastStatus; then
+                setStatusDown
+                onVpnDown
+            fi
+            ;;
+    --env)  dumpenv ;;
+    *)      usage   ;;
+esac

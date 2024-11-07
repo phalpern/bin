@@ -1,0 +1,4 @@
+#! /bin/bash
+
+tsh ls -f names > ~/.ssh/ssh_names$$
+mv ~/.ssh/ssh_names$$ ~/.ssh/ssh_names
