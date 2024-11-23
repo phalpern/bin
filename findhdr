@@ -1,0 +1,18 @@
+#! /bin/bash
+
+tmpcppfile=/tmp/$$.cpp
+tmpgrepfile=/tmp/$$.grep
+
+for hdr in "$@"; do
+    echo "#include <$hdr>"
+done > $tmpcppfile
+
+for hdr in "$@"; do
+    echo "/$hdr\$"
+done > $tmpgrepfile
+
+g++ -std=c++23 -M $tmpcppfile |
+    sed -e 's;\s\s*;\n;g' -e 's;\\$;;' |
+    egrep -f $tmpgrepfile
+
+rm -f $tmpcppfile $tmpgrepfile
