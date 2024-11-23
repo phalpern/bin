@@ -17,13 +17,19 @@
 
 function onVpnUp
 {
-    cp /etc/apt/apt.conf.d/proxy.conf.bloomberg /etc/apt/apt.conf.d/proxy.conf
-    ~/bin/update-ssh-names
+    cp /etc/apt/apt.conf.d/proxy.conf.bbVPN /etc/apt/apt.conf.d/proxy.conf
+    cp ~/.ssh/config.bbVPN ~/.ssh/config
+    cp ~/.wgetrc.bbVPN ~/.wgetrc
+    cat ~/.gitconfig.common ~/.gitconfig.bbVPN > ~/.gitconfig
+    # ~/bin/update-ssh-names  # Auth hangs when launched from scheduler
 }
 
 function onVpnDown
 {
     cp /dev/null /etc/apt/apt.conf.d/proxy.conf
+    cp ~/.ssh/config.pablo ~/.ssh/config
+    cp ~/.wgetrc.pablo ~/.wgetrc
+    cp ~/.gitconfig.common ~/.gitconfig
 }
 
 function usage
