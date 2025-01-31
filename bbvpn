@@ -37,6 +37,7 @@ function usage
     cat <<EOF >&2
 Usage:
   Silently returns success if connected : bbvpn [ --stat ]
+  Echo up or down status to stdout      : bbvpn --echo
   Register vpn as being connected       : bbvpn --up
   Register vpn as being disconnected    : bbvpn --down
   Dump proxy environment variables      : bbvpn --env
@@ -98,6 +99,14 @@ case "${1:---stat}" in
     --stat) if lastStatus; then
                 exit 0
             else
+                exit 1
+            fi
+            ;;
+    --echo) if lastStatus; then
+                echo up
+                exit 0
+            else
+                echo down
                 exit 1
             fi
             ;;
