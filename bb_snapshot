@@ -25,11 +25,12 @@ for file in "$@"; do
     tsfile="${tsfile%$fileext}"             # Strip off file extension
     tsfile="${tsfile%.$initials}"           # Strip off .initials, if any
     tsfile="$tsfile.$initials.$ts$fileext"  # Append .initials.timestamp.ext
+
     if [ -f "$tsfile" ]; then
         echo "$tsfile already exists"
-        exit 1
+        continue
     fi
-    # echo cp -p "$file" "$tsfile"
+
     mkdir -p "$snapshotdir"
     (set -x; cp -p "$file" "$tsfile")
     chmod -w "$tsfile"
