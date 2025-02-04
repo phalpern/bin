@@ -1,6 +1,6 @@
 #! /bin/bash
 
-# Usage: mydocker <command> [ args... ]
+# Usage: mydocker [name=value]... <command> [ args... ]
 #
 # This wrapper around docker attempts to make the container environment as
 # similar as possible to the host environment by performing the following
@@ -14,12 +14,15 @@
 # 4. If this script is run from an interactive shell, runs docker in
 #    interactive mode.
 # 5. Runs the container with the same uid and guid as the host.
+# 6. If one or more `name=value` pairs are specified, the corresponding
+#    environment variable are set before running the command.
 #
 # This script does not attempt to copy over environment variables, preferring
 # to let the executed script set things such as the build environment.
 
-dockername=bde-docker-dev
-# dockername=bdebuildbase
+image_name=bde-docker-dev
+container_name=dev
+# image_name=bdebuildbase
 
 # If current directory is a subdirectory of $HOME, then set docker instance
 # to current directory; otherwise, use the default "/workspace"
@@ -30,6 +33,17 @@ fi
 
 # $homebin is the directory holding favorite custom scripts
 homebin="$HOME/bin"
+
+# Strip environment variables from front
+env_list=()
+while [ $# != 0 ]; do
+    if echo "$1" | grep "^[a-zA-Z_][a-zA-Z_0-9]*=" > /dev/null; then
+        env_list+=("$1")
+        shift
+    else
+        break
+    fi
+done
 
 # If `command` is found in `$homebin` folder, use full path to command within
 # the container; otherwise, let the container figure out the path on its own.
@@ -48,7 +62,32 @@ else
     interactive=""
 fi
 
-# Run docker with the current uid and gid, mount the $HOME directory using
-# same path name, and set the working directory to $wd, and tell it to execute
-# the specified command within the container.
-exec docker run $interactive --rm -v "$HOME:$HOME" -v "$HOME/bbcm/bde-tools:/bde-tools" -u $(id -u):$(id -g) -w "$wd" $dockername "$cmd" "$@"
+# Check that docker image exists
+if ! docker images | grep "^$image_name " > /dev/null; then
+    echo >&2 "Docker image doesn't exist. Run 'bde_docker build'."
+    exit 1
+fi
+
+# Check container status
+container_ps=$(docker ps -a | grep " $container_name\$")
+case $container_ps in
+    "")       container_status=none     ;;
+    *\ Up\ *) container_status=running;;
+    *)        container_status=stopped  ;;
+esac
+
+if [ $container_status == none ]; then
+    # Docker container does not exist, create it from the docker image
+    (cd ~/bbcm/bde &&
+         MACHINE=$(uname -m) docker compose -f ~/.bde-docker/compose.yaml create)
+#    docker run -d -t --name $container_name -v "$HOME:$HOME" -v "$HOME/bbcm/bde-tools:/bde-tools" -u $(id -u):$(id -g) -w "$HOME" $image_name
+fi
+
+# Start docker image (in case it's not running), then execute $cmd
+docker start $container_name > /dev/null
+docker exec $interactive -w $wd $container_name env "${env_list[@]}" "$cmd" "$@"
+if [ $container_status != running ]; then
+    # Container was not running when we started.
+    # Return container to a stopped state when done.
+    docker stop $container_name > /dev/null &
+fi

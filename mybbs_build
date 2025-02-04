@@ -1,10 +1,14 @@
-#! /usr/bin/perl -w
+#! /opt/bb/bin/perl -w
+
+# Note: Assumes presence of /opt/bb/bin. To run directly on a WSL installation
+# (not in Docker, and not on BB dev machine), create a symbolic link from /usr
+# to /opt/bb.
 
 =pod
 
 Run bbs_build conveniently for desired compiler and ufid.
 
-Using this script instead of calling cmake_build.py directly simplifies the
+Using this script instead of calling bbs_build.py directly simplifies the
 workflow when switching among compilers/profiles and ufids.  Thus, instead of:
 
     pushd ~/bde/_build
@@ -126,6 +130,7 @@ for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
 chdir $buildroot;
 
 # Build bbs_build command line (with single-quotes around each arg)
+$ENV{BDE_BUILD_AREA}=$ENV{HOME}."/buildarea";
 my $cmdline="eval \$(bbs_build_env $ufidarg $profilearg); ".
     "bbs_build '".join("' '", @ARGV)."'";
 
