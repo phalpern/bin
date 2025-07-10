@@ -77,17 +77,10 @@ else {
 
 # Find the root directory for building.
 # If doing a workspace build, parent directory of the repo(s) you are building
-# must have a CMakeLists.txt file with the following contents:
-#
-# # CMakeLists.txt for a workspace
-# cmake_minimum_required(VERSION 3.22)
-# project(workspace)
-#
-# enable_testing()
-#
-# add_subdirectory(bde)
-# add_subdirectory(bde-classic)
-#
+# must have a CMakeLists.txt file generated from `bde_make_workspace`, e.g.:
+#```
+#   ~/bbcm $ bde_make_workspace phalpern/bde-classic
+#```
 my $buildroot;
 for my $dir (@buildroot_searchpath) {
     if ( -d "$dir/_build" and -f "$dir/CMakeLists.txt" ) {
@@ -130,7 +123,6 @@ for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
 chdir $buildroot;
 
 # Build bbs_build command line (with single-quotes around each arg)
-$ENV{BDE_BUILD_AREA}=$ENV{HOME}."/buildarea";
 my $cmdline="eval \$(bbs_build_env $ufidarg $profilearg); ".
     "bbs_build '".join("' '", @ARGV)."'";
 
