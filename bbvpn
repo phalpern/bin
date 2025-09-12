@@ -17,7 +17,7 @@
 
 function onVpnUp
 {
-    cp /etc/apt/apt.conf.d/proxy.conf.bbVPN /etc/apt/apt.conf.d/proxy.conf
+    cp /etc/apt/proxy.conf.bbVPN /etc/apt/apt.conf.d/proxy.conf
     cp ~/.ssh/config.bbVPN ~/.ssh/config
     cp ~/.wgetrc.bbVPN ~/.wgetrc
     cat ~/.gitconfig.common ~/.gitconfig.bbVPN > ~/.gitconfig
@@ -36,11 +36,13 @@ function usage
 {
     cat <<EOF >&2
 Usage:
-  Silently returns success if connected : bbvpn [ --stat ]
-  Echo up or down status to stdout      : bbvpn --echo
-  Register vpn as being connected       : bbvpn --up
-  Register vpn as being disconnected    : bbvpn --down
-  Dump proxy environment variables      : bbvpn --env
+  Silently returns success if connected          : bbvpn [ --stat ]
+  Also echo "up" or "down" status to stdout      : bbvpn --echo
+  Register vpn as being connected                : bbvpn --up
+  Register vpn as being disconnected             : bbvpn --down
+  Print proxy environment variable settings      : bbvpn --env
+  Detect vpn connection, but don't update status : bbvpn --detect
+  Detect and update vpn connection status        : bbvpn --update
 EOF
 
     exit 2
@@ -49,11 +51,6 @@ EOF
 # The status file should always exist. It is set to writable if the VPN is in a
 # connected (up) state and is otherwise read-only.
 statusfile=/etc/bbVPN/status.txt
-
-if [ ! -f $statusfile ]; then
-    echo "This file is writable if VPN is connected, else read-only." > $statusfile
-    chmod a+r,a-w $statusfile
-fi
 
 # Set vpn status to UP
 function setStatusUp
@@ -77,6 +74,33 @@ function lastStatus
     fi
 }
 
+# Return success if the bb Vpn is connected, otherwise failure. Does not change
+# the known status.
+function detectVpn
+{
+    # If can connect through BB proxy, then succeed.
+    nc -d -w 1 -X connect -x "proxy.bloomberg.com:81" -z wg21.link 80 > /dev/null 2>&1 || return 1
+    return 0
+}
+
+# Detect whether the bb Vpn is connected and update the known status.
+function update
+{
+    if detectVpn; then
+        if ! lastStatus; then
+            setStatusUp
+            onVpnUp
+        fi
+        return 0
+    else
+        if lastStatus; then
+            setStatusDown
+            onVpnDown
+        fi
+        return 1
+    fi
+}
+
 function dumpenv
 {
     if [ -w $statusfile ]; then
@@ -94,14 +118,14 @@ EOF
     fi
 }
 
+if [ ! -f $statusfile ]; then
+    echo "This file is writable if VPN is connected, else read-only." > $statusfile
+    chmod a+r,a-w $statusfile
+fi
+
 case "${1:---stat}" in
     --help) usage ;;
-    --stat) if lastStatus; then
-                exit 0
-            else
-                exit 1
-            fi
-            ;;
+    --stat) lastStatus || exit 1 ;;
     --echo) if lastStatus; then
                 echo up
                 exit 0
@@ -120,6 +144,10 @@ case "${1:---stat}" in
                 onVpnDown
             fi
             ;;
+    --detect) detectVpn || exit 1 ;;
+    --update) update    || exit 1 ;;
     --env)  dumpenv ;;
     *)      usage   ;;
 esac
+
+exit 0

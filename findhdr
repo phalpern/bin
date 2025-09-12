@@ -11,7 +11,7 @@ for hdr in "$@"; do
     echo "/$hdr\$"
 done > $tmpgrepfile
 
-g++ -std=c++23 -M $tmpcppfile |
+${CXX:-g++} -std=c++23 -M $tmpcppfile |
     sed -e 's;\s\s*;\n;g' -e 's;\\$;;' |
     egrep -f $tmpgrepfile
 
