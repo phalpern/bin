@@ -29,6 +29,7 @@ c_comment_re   = re.compile(r'/\*[^*]*\*+(?:[^/*][^*]*\*+)*/', flags=re.DOTALL)
 cpp_comment_re = re.compile(r'//.*')
 main_re        = re.compile(r'^ *int *main\b')
 switch_re      = re.compile(r'^ +switch *\(')
+# Note that `case_re` ignores negative case numbers
 case_re        = re.compile(r'^ +case +([1-9A-Za-z][0-9A-Za-z]*) *:')
 planitem_re    = re.compile(r'^// +\[ *([1-9A-Za-z][0-9A-Za-z]*)\]')
 
@@ -92,7 +93,14 @@ def find_case_lines(code):
         # Exit main if braces close up
         if closed_count > 0 and brace_depth <= 0:
             assert(switch_nesting == 0)
-            return cases
+            # Because of conditional compilation, there could be more than one
+            # `main`, e.g., there could be stubbed out `main` for certain build
+            # modes.  Return the cases from the first `main` that has a switch
+            # statement.
+            if cases:
+                return cases
+            else:
+                in_main = False
 
 def renumber_testcases(code, testcases):
     """Renumber the test cases in the specified `code` and return the result.

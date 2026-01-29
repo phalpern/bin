@@ -1,0 +1,220 @@
+#! /opt/bb/bin/perl -w
+
+# Note: Assumes presence of /opt/bb/bin. To run directly on a WSL installation
+# (not in Docker, and not on BB dev machine), create a symbolic link from /usr
+# to /opt/bb.
+
+=pod
+
+Run bbs_build conveniently for desired compiler and ufid.
+
+Using this script instead of calling bbs_build.py directly simplifies the
+workflow when switching among compilers/profiles and ufids.  Thus, instead of:
+
+    pushd ~/bde/_build
+
+    eval $(bbs_build_env --ufid dbg_exc_mt_64)
+    bbs_build --targets=bslstl_vector.t --tests=run build
+
+    eval $(bbs_build_env --ufid dbg_exc_mt_64_cpp11)
+    bbs_build.py --targets=bslstl_vector.t --tests=run build
+
+    eval $(bbs_build_env -p BBToolchain32 --ufid dbg_exc_mt_64_cpp17)
+    bbs_build.py --targets=bslstl_vector.t --tests=run build
+
+    popd
+
+Simply type
+
+    mybbs_build --ufid dbg_exc_mt_64 --targets=bslstl_vector.t --tests=run build
+    mybbs_build --ufid dbg_exc_mt_64_cpp11 --targets=bslstl_vector.t --tests=run build
+    mybbs_build -p BBToolchain32 --ufid dbg_exc_mt_64_cpp17 --targets=bslstl_vector.t --tests=run build
+
+Note that there is no need to change directory nor is there a risk of
+forgetting the current configuration.
+
+Usage:
+
+    mybbs_build [ -p <profile> ] [ --ufid <ufid> ] <bbs_build-options>
+
+If this command is executed in directory within a git repository, it
+determines the build and install directories for the repository and target and
+runs the build from the root of the repository. The first time that a specific
+compiler/ufid combination is used, the single C<configure> argument should be
+given after the ufid.
+
+The standard output and standard error streams are modified such that all path
+names are recast relative to the original directory rather than the build
+directory. All assert messages are rewritten to look like compiler
+messages. Both of these changes help visual tools such as emacs automatically
+find the error line in the source.
+=cut
+
+use English;
+use strict;
+use Cwd;
+
+use File::Spec;
+use File::Basename;
+
+my $cwd = Cwd::abs_path(cwd());
+print STDERR "cwd = $cwd\n";
+
+# If we're in a git repo, try to find the workspace in the parent dir, else see
+# if we can build in the repo root Otherwise, see if we can build in the
+# current directory.
+my @buildroot_searchpath;
+my $reporoot = `git rev-parse --show-toplevel 2> /dev/null`;
+chomp $reporoot;
+if ( $reporoot ) {
+    print STDERR "repo root = $reporoot\n";
+    @buildroot_searchpath = ( $reporoot, dirname($reporoot), $cwd );
+}
+else {
+    print STDERR "Not in a git repository\n";
+    @buildroot_searchpath = ( $cwd );
+}
+
+# Find the root directory for building.
+# If doing a workspace build, parent directory of the repo(s) you are building
+# must have a CMakeLists.txt file generated from `bde_make_workspace`, e.g.:
+#```
+#   ~/bbcm $ bde_make_workspace phalpern/bde-classic
+#```
+my $buildroot;
+for my $dir (@buildroot_searchpath) {
+    if ( -d "$dir/_build" and -f "$dir/CMakeLists.txt" ) {
+        $buildroot = "$dir";
+        print STDERR "Build root = $buildroot\n";
+        last;
+    }
+}
+die "Can't find root directory containing '_build' dir and 'CMakeLists.txt'\n"
+    unless $buildroot;
+
+
+# Look for "--ufid", "--profile", or "-p" argument.
+my $ufidarg="";
+my $profilearg="";
+for (my $argidx = 0; $argidx < scalar(@ARGV); ) {
+    my $arg = $ARGV[$argidx];
+
+    if ($arg =~ m:^--ufid=(.*)$:) {
+        $ufidarg="--ufid=".$1;
+        splice @ARGV, $argidx, 1;
+    }
+    elsif ($arg eq "--ufid") {
+        $ufidarg="--ufid=".$ARGV[$argidx+1];
+        splice @ARGV, $argidx, 2;
+    }
+    elsif ($arg =~ m:^--profile=(.*)$:) {
+        $profilearg="-p ".$1;
+        splice @ARGV, $argidx, 1;
+    }
+    elsif ($arg eq "--profile" or $arg eq "-p") {
+        $profilearg="-p ".$ARGV[$argidx+1];
+        splice @ARGV, $argidx, 2;
+    }
+    else {
+        ++$argidx;
+    }
+}
+
+chdir $buildroot;
+
+# Build bbs_build command line (with single-quotes around each arg)
+my $cmdline="eval \$(bbs_build_env $ufidarg $profilearg); ".
+    "bbs_build '".join("' '", @ARGV)."'";
+
+print STDERR "$cmdline\n";
+
+open BUILD, "$cmdline 2>&1 |"
+    or die "Cannot run command $cmdline\n";
+
+my %known_failures;
+my @ignored_failures;
+if (open IGNORE, "_build/known_failures.txt") {
+    while (defined (my $component = <IGNORE>)) {
+        chomp $component;
+        $component =~ s/^\s*#.*$//;
+        $known_failures{$component} = 1 if $component;
+        # print STDERR "Known failure: $component\n" if $component;
+    }
+    close IGNORE;
+}
+
+my $failurePrompt = "";
+my $ignoreCmakeStatus = 0;
+
+while (defined (my $buildline = <BUILD>))
+{
+    # Transform test assert failures into something emacs recognizes as an
+    # error message.
+    $buildline =~ s{^Error\s+([^(]+)\(([0-9]*)\):}{$1:$2: error: };
+
+    # Transform filenames that are relative to the git root into absolute path
+    # names, then to filenames that are relative to $cwd
+    if ( $buildline =~ m{^"([^"]+)"} or
+         $buildline =~ m{^([^:, ]+)[:,]} or
+         $buildline =~ m{^.* from ([^:, ]+):}) {
+        my $filename=$1;
+        my $relfilename=$filename;
+        # Paths are relative to 2nd-level build subdirectory. Convert to being
+        # relative to run directory itself.
+        $relfilename =~ s{^../../}{};
+        if ( -e $relfilename) {
+            my $absfilename = File::Spec->rel2abs($relfilename);
+            $relfilename = File::Spec->abs2rel($absfilename, $cwd);
+
+            # print "cwd = $cwd\n";
+            # print "filename = $filename\n";
+            # print "absfilename = $absfilename\n";
+            # print "relfilename = $relfilename\n";
+
+            # Replace filename prefix with path relative to $cwd
+            $buildline =~ s{\Q$filename\E}{$relfilename};
+        }
+    }
+
+    if ($buildline =~ m{^The following tests FAILED}) {
+        # Build succeeded.  Assume success until first non-ignored test failure
+        # is encountered.
+        $ignoreCmakeStatus = 1;
+        $failurePrompt = $buildline;
+        next;
+    }
+
+    if ($buildline =~ m{^([^: ]*/)*([^.:/ ]+)\.[.a-zA-Z0-9_]+:[0-9:]* *[Ee]rror:}
+        && $known_failures{$2}) {
+        $buildline =~ s{:}{ (ignored) };
+    }
+    elsif ($buildline =~ m{[0-9]+ - ([^\.]*)(\.[0-9]+)?\.t \(.*\)}) {
+        if ($known_failures{$1}) {
+            push @ignored_failures, $buildline;
+            next;
+        } else {
+            # A non-ignored test error has been encountered.
+            $ignoreCmakeStatus = 0;
+            print $failurePrompt; # Print prompt only if at least one failure
+            $failurePrompt = "";  # Print prompt only once
+        }
+    }
+
+    print STDERR $buildline;
+}
+
+print STDERR "The following failed tests were IGNORED:\n" if @ignored_failures;
+for my $failure (@ignored_failures) {
+    print STDERR  $failure;
+}
+
+close BUILD;    # Sets $? to exit status
+
+if ($ignoreCmakeStatus) {
+    # Report success if tests were run but any failures were ignored
+    exit 0
+}
+else {
+    # Report exit status from cmake
+    exit $? >> 8;
+}
