@@ -17,7 +17,7 @@
 
 function onVpnUp
 {
-    cp /etc/apt/proxy.conf.bbVPN /etc/apt/apt.conf.d/proxy.conf
+    cp ~/.apt.proxy.conf.bbVPN /etc/apt/apt.conf.d/proxy.conf
     cp ~/.ssh/config.bbVPN ~/.ssh/config
     cp ~/.wgetrc.bbVPN ~/.wgetrc
     cat ~/.gitconfig.common ~/.gitconfig.bbVPN > ~/.gitconfig
@@ -50,7 +50,7 @@ EOF
 
 # The status file should always exist. It is set to writable if the VPN is in a
 # connected (up) state and is otherwise read-only.
-statusfile=/etc/bbVPN/status.txt
+statusfile=~/.vpnstatus
 
 # Set vpn status to UP
 function setStatusUp
